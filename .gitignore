@@ -1,0 +1,13 @@
+# build output
+dist/
+bin/
+obj/
+*.user
+.vs/
+
+# installer dependencies (downloaded at build time)
+installer/deps/
+
+# macOS metadata, incl. AppleDouble files created on network volumes
+.DS_Store
+._*

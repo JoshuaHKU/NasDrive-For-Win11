@@ -1,0 +1,217 @@
+<UserControl x:Class="NasDrive.Views.DriveEditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:v="clr-namespace:NasDrive.Views"
+             xmlns:vm="clr-namespace:NasDrive.ViewModels"
+             mc:Ignorable="d" d:DataContext="{d:DesignInstance vm:DriveEditorViewModel}"
+             Background="{StaticResource WindowBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Margin="24,16,24,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />  <!-- 0 title -->
+                    <RowDefinition Height="Auto" />  <!-- 1 service -->
+                    <RowDefinition Height="Auto" />  <!-- 2 drive -->
+                    <RowDefinition Height="Auto" />  <!-- 3 options -->
+                    <RowDefinition Height="Auto" />  <!-- 4 address -->
+                    <RowDefinition Height="Auto" />  <!-- 5 path -->
+                    <RowDefinition Height="Auto" />  <!-- 6 account -->
+                    <RowDefinition Height="Auto" />  <!-- 7 tls/timeout -->
+                    <RowDefinition Height="Auto" />  <!-- 8 advanced toggle -->
+                    <RowDefinition Height="Auto" />  <!-- 9 advanced -->
+                    <RowDefinition Height="Auto" />  <!-- 10 test result -->
+                </Grid.RowDefinitions>
+
+                <!-- Title -->
+                <StackPanel Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,14">
+                    <Button Style="{StaticResource RoundButton}" Command="{Binding CancelCommand}" ToolTip="{v:T Main.Back}" Content="&#xE72B;" Margin="0,0,14,0" />
+                    <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Service type -->
+                <TextBlock Grid.Row="1" Text="{v:T Editor.ServiceType}" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,6,10,0" />
+                <Border Grid.Row="1" Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="8" Margin="0,0,0,10">
+                    <WrapPanel>
+                        <Border Background="{StaticResource AccentBrush}" Padding="10,4" Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE774;" Style="{StaticResource Icon}" Margin="0,0,6,0" />
+                                <TextBlock Text="WebDAV" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="Synology · QNAP · Nextcloud · ASUSTOR — v0.2" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                    </WrapPanel>
+                </Border>
+
+                <!-- Virtual drive -->
+                <TextBlock Grid.Row="2" Text="{v:T Editor.VirtualDrive}" Style="{StaticResource FieldLabel}" />
+                <Grid Grid.Row="2" Grid.Column="1" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <ComboBox ItemsSource="{Binding Letters}" SelectedItem="{Binding DriveLetter}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding StringFormat={}{0}:}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBox Grid.Column="2" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" ToolTip="{v:T Editor.Name}" />
+                </Grid>
+
+                <!-- Options -->
+                <UniformGrid Grid.Row="3" Grid.Column="1" Columns="2" Margin="0,0,0,10">
+                    <CheckBox IsChecked="{Binding AutoConnect}" Content="{v:T Editor.AutoConnect}" />
+                    <CheckBox IsChecked="{Binding UseProxy}" Content="{v:T Editor.Proxy}" />
+                    <CheckBox IsChecked="{Binding PromptCredentials}" Content="{v:T Editor.PromptCred}" />
+                    <CheckBox IsChecked="{Binding ReadOnly}" Content="{v:T Editor.ReadOnly}" />
+                    <CheckBox IsChecked="{Binding LocalDisk}" Content="{v:T Editor.LocalDisk}" />
+                </UniformGrid>
+
+                <!-- Address -->
+                <TextBlock Grid.Row="4" Text="{v:T Editor.Address}" Style="{StaticResource FieldLabel}" />
+                <Grid Grid.Row="4" Grid.Column="1" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="70" />
+                    </Grid.ColumnDefinitions>
+                    <CheckBox IsChecked="{Binding Https}" Content="HTTPS" Margin="0,0,8,0" />
+                    <TextBlock Grid.Column="1" Text="{Binding Scheme}" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource DimTextBrush}" />
+                    <Grid Grid.Column="2">
+                        <TextBox x:Name="HostBox" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged, Delay=400}" />
+                        <TextBlock Text="{v:T Editor.Host}" Style="{StaticResource Dim}" Margin="7,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                   Visibility="{Binding Text.IsEmpty, ElementName=HostBox, Converter={StaticResource BoolToVis}}" />
+                        <Border BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1" IsHitTestVisible="False"
+                                Visibility="{Binding HostMissing, Converter={StaticResource BoolToVis}}" />
+                    </Grid>
+                    <TextBlock Grid.Column="3" Text=":" Margin="4,0" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="4" Text="{Binding Port, UpdateSourceTrigger=LostFocus}" />
+                </Grid>
+                <Grid Grid.Row="5" Grid.Column="1" Margin="0,0,0,4">
+                    <TextBox x:Name="PathBox" Text="{Binding BasePath, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="{v:T Editor.Path}" Style="{StaticResource Dim}" Margin="7,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                               Visibility="{Binding Text.IsEmpty, ElementName=PathBox, Converter={StaticResource BoolToVis}}" />
+                </Grid>
+
+                <!-- Account -->
+                <TextBlock Grid.Row="6" Text="{v:T Editor.Account}" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,10,10,0" />
+                <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,6,0,6">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid IsEnabled="{Binding CredentialsEnabled}">
+                            <TextBox x:Name="UserBox" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Text="{v:T Editor.User}" Style="{StaticResource Dim}" Margin="7,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                       Visibility="{Binding Text.IsEmpty, ElementName=UserBox, Converter={StaticResource BoolToVis}}" />
+                            <Border BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1" IsHitTestVisible="False"
+                                    Visibility="{Binding UserMissing, Converter={StaticResource BoolToVis}}" />
+                        </Grid>
+                        <Grid Grid.Column="2" IsEnabled="{Binding CredentialsEnabled}">
+                            <PasswordBox x:Name="PassBox" PasswordChanged="PassBox_PasswordChanged" />
+                            <TextBlock x:Name="PassHint" Text="{Binding PasswordHint}" Style="{StaticResource Dim}" Margin="7,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+                            <Border BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1" IsHitTestVisible="False"
+                                    Visibility="{Binding PasswordMissing, Converter={StaticResource BoolToVis}}" />
+                        </Grid>
+                        <CheckBox Grid.Column="3" IsChecked="{Binding Anonymous}" Content="{v:T Editor.Anonymous}" Margin="10,0,0,0" />
+                    </Grid>
+                </StackPanel>
+
+                <!-- TLS and timeout -->
+                <TextBlock Grid.Row="7" Text="{v:T Editor.Security}" Style="{StaticResource FieldLabel}" />
+                <Grid Grid.Row="7" Grid.Column="1" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="80" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <CheckBox IsChecked="{Binding SkipTlsVerify}" Content="{v:T Editor.SkipTls}" IsEnabled="{Binding Https}" />
+                        <TextBlock Text="{v:T Editor.HttpWarning}" Foreground="{StaticResource WarningBrush}" FontSize="11"
+                                   Visibility="{Binding ShowHttpWarning, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{v:T Editor.Timeout}" Style="{StaticResource FieldLabel}" Margin="12,0,8,0" />
+                    <ComboBox Grid.Column="2" ItemsSource="{Binding Timeouts}" SelectedItem="{Binding TimeoutSec}" />
+                    <TextBlock Grid.Column="3" Text="{v:T Editor.Seconds}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                </Grid>
+
+                <!-- Advanced -->
+                <Button Grid.Row="8" Grid.Column="1" HorizontalAlignment="Left" Style="{StaticResource TitleButton}" Padding="0,4"
+                        Command="{Binding ToggleAdvancedCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE76C;" Style="{StaticResource Icon}" FontSize="10" Margin="0,0,6,0" />
+                        <TextBlock Text="{v:T Editor.Advanced}" />
+                    </StackPanel>
+                </Button>
+                <Grid Grid.Row="9" Grid.Column="1" Margin="0,4,0,6" Visibility="{Binding ShowAdvanced, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="30" />
+                        <RowDefinition Height="30" />
+                        <RowDefinition Height="30" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{v:T Editor.Vendor}" Style="{StaticResource FieldLabel}" FontWeight="Normal" />
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding Vendors}" SelectedItem="{Binding Vendor}" />
+                    <TextBlock Grid.Column="2" Text="{v:T Editor.CacheMode}" Style="{StaticResource FieldLabel}" FontWeight="Normal" Margin="12,0,10,0" />
+                    <ComboBox Grid.Column="3" ItemsSource="{Binding CacheModes}" SelectedItem="{Binding CacheMode}" />
+                    <TextBlock Grid.Row="1" Text="{v:T Editor.CacheMaxSize}" Style="{StaticResource FieldLabel}" FontWeight="Normal" />
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CacheMaxSize}" />
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{v:T Editor.DirCache}" Style="{StaticResource FieldLabel}" FontWeight="Normal" Margin="12,0,10,0" />
+                    <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DirCacheTime}" />
+                    <TextBlock Grid.Row="2" Text="{v:T Editor.DiskTotal}" Style="{StaticResource FieldLabel}" FontWeight="Normal" />
+                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding DiskSpaceTotal}" ToolTip="e.g. 4T" />
+                </Grid>
+
+                <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding TestResult}" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{StaticResource ErrorBrush}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding TestOk}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- Buttons -->
+        <Grid Grid.Row="1" Margin="134,8,24,16">
+            <StackPanel Orientation="Horizontal">
+                <Button Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Content="{Binding SaveText}" IsDefault="True" />
+                <Button Style="{StaticResource DialogButton}" Command="{Binding CancelCommand}" Content="{v:T Editor.Cancel}" IsCancel="True" />
+                <Button Style="{StaticResource DialogButton}" Command="{Binding HelpCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE897;" Style="{StaticResource Icon}" Margin="0,0,5,0" />
+                        <TextBlock Text="{v:T Editor.Help}" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+            <Button HorizontalAlignment="Right" Style="{StaticResource DialogButton}" Margin="0" Command="{Binding TestCommand}" Content="{v:T Editor.Test}" />
+        </Grid>
+    </Grid>
+</UserControl>
