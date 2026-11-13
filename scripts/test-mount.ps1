@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   End-to-end engine test on Windows: start nasdrive-engine, test the
   connection, mount a WebDAV folder, read/write a file, unmount.
@@ -14,6 +14,11 @@
     powershell -ExecutionPolicy Bypass -File test-mount.ps1 `
       -Url https://192.168.1.10:5006 -RemotePath /some/folder -Drive T: -SkipTlsVerify
 
+  NFS (no credential needed; the NAS must allow this PC's IP):
+
+    powershell -ExecutionPolicy Bypass -File test-mount.ps1 `
+      -Protocol nfs -Url 192.168.1.10 -Export /volume1/share -RemotePath /sub -Drive T:
+
 .PARAMETER Credential
   Credential Manager target holding the NAS user and password.
 #>
@@ -21,6 +26,8 @@ param(
     [Parameter(Mandatory)] [string] $Url,
     [Parameter(Mandatory)] [string] $RemotePath,
     [string] $Drive = "T:",
+    [ValidateSet("webdav", "nfs")] [string] $Protocol = "webdav",
+    [string] $Export = "",
     [string] $Credential = "NasDrive:test-nas",
     [string] $Engine = (Join-Path $PSScriptRoot "nasdrive-engine.exe"),
     [switch] $SkipTlsVerify,
@@ -57,9 +64,11 @@ function Ok($msg) { Write-Host "    OK  $msg" -ForegroundColor Green }
 function Fail($msg) { Write-Host "    FAIL $msg" -ForegroundColor Red; $script:failed++ }
 $failed = 0
 
-$cred = [NdCred]::Read($Credential)
-if (-not $cred) { throw "Credential '$Credential' not found. Create it with: cmdkey /generic:$Credential /user:NAS_USER /pass" }
-$user = $cred[0]; $pass = $cred[1]
+if ($Protocol -eq "webdav") {
+    $cred = [NdCred]::Read($Credential)
+    if (-not $cred) { throw "Credential '$Credential' not found. Create it with: cmdkey /generic:$Credential /user:NAS_USER /pass" }
+    $user = $cred[0]; $pass = $cred[1]
+}
 
 # --- start engine ---------------------------------------------------------
 Step "Starting engine"
@@ -94,19 +103,29 @@ try {
     if (-not $v.winfspOk) { Fail "WinFsp is not installed" }
 
     # --- connection test --------------------------------------------------
-    Step "Testing connection to $Url$RemotePath"
-    $obscured = (Rc "core/obscure" @{ clear = $pass }).obscured
     $q = { param($s) "'" + $s.Replace("'", "''") + "'" }
-    $fs = ":webdav,url=$(& $q $Url),vendor=other,user=$(& $q $user),pass=$(& $q $obscured),override.timeout='100s',override.contimeout='15s'"
-    if ($SkipTlsVerify) { $fs += ",override.no_check_certificate='true'" }
-    $fs += ":" + $RemotePath
+    if ($Protocol -eq "nfs") {
+        Step "Listing NFS exports on $Url"
+        $ex = Rc "nasdrive/nfsexports" @{ host = $Url }
+        if ($ex.ok) { Ok (($ex.exports | ForEach-Object { $_.path }) -join ", ") } else { Fail "exports: $($ex.errorCode) $($ex.errorMsg)" }
+        Step "Testing connection to nfs://$Url$Export$RemotePath"
+        $fs = ":nfs,host=$(& $q $Url),export=$(& $q $Export),rpc_timeout='30s':" + $RemotePath
+        $volHost = $Url
+    } else {
+        Step "Testing connection to $Url$RemotePath"
+        $obscured = (Rc "core/obscure" @{ clear = $pass }).obscured
+        $fs = ":webdav,url=$(& $q $Url),vendor=other,user=$(& $q $user),pass=$(& $q $obscured),override.timeout='100s',override.contimeout='15s'"
+        if ($SkipTlsVerify) { $fs += ",override.no_check_certificate='true'" }
+        $fs += ":" + $RemotePath
+        $volHost = ([Uri]$Url).Host
+    }
     $t = Rc "nasdrive/test" @{ fs = $fs; timeout = "30s" } 60
     if ($t.ok) { Ok "reachable in $($t.latencyMs) ms; total=$($t.total) free=$($t.free)" }
     else { Fail "test failed: $($t.errorCode) $($t.errorMsg)"; throw "connection test failed" }
 
     # --- mount --------------------------------------------------------------
     Step "Mounting on $Drive"
-    $vol = "\\" + ([Uri]$Url).Host + "\nasdrive-test"
+    $vol = "\\" + $volHost + "\nasdrive-test"
     $m = Rc "mount/mount" @{
         fs = $fs; mountPoint = $Drive; mountType = "cmount"
         mountOpt = @{ VolumeName = $vol; NetworkMode = [bool]$NetworkMode }
@@ -124,7 +143,7 @@ try {
     Ok ("total {0:N1} GB, free {1:N1} GB, format {2}, label '{3}'" -f ($di.TotalSize/1GB), ($di.AvailableFreeSpace/1GB), $di.DriveFormat, $di.VolumeLabel)
 
     Step "Write / read / rename / delete a test file"
-    $name = "nasdrive-test-$([guid]::NewGuid().ToString('N').Substring(0,8)).txt"
+    $name = "nasdrive-测试-$([guid]::NewGuid().ToString('N').Substring(0,8)).txt"
     $content = "NasDrive test " + (Get-Date -Format o)
     Set-Content -Path "$Drive\$name" -Value $content -Encoding UTF8
     $back = Get-Content -Path "$Drive\$name" -Raw
@@ -145,6 +164,16 @@ try {
     $probe = Rc "nasdrive/probe" @{ fs = $mounts[0].fs }
     if ($probe.online) { Ok "probe online" } else { Fail "probe offline: $($probe.errorMsg)" }
 
+    Step "Throughput (64 MB through the drive)"
+    $big = "$Drive\nasdrive-big-$([guid]::NewGuid().ToString('N').Substring(0,6)).bin"
+    $buf = New-Object byte[] (64MB); (New-Object Random).NextBytes($buf)
+    $sw = [Diagnostics.Stopwatch]::StartNew(); [IO.File]::WriteAllBytes($big, $buf); $wt = $sw.Elapsed.TotalSeconds
+    $deadline = (Get-Date).AddSeconds(300)
+    do { Start-Sleep -Milliseconds 500; $dc = (Rc "nasdrive/mounts").mounts[0].diskCache
+         $pending = [int]$dc.uploadsInProgress + [int]$dc.uploadsQueued } while ($pending -gt 0 -and (Get-Date) -lt $deadline)
+    $ut = $sw.Elapsed.TotalSeconds
+    Ok ("write to cache {0:N1} MB/s, upload to NAS done after {1:N1} s ({2:N1} MB/s)" -f (64 / $wt), $ut, (64 / $ut))
+    Remove-Item "$big"
     Remove-Item "$Drive\$name.renamed"
     Start-Sleep -Seconds 1
     if (-not (Test-Path "$Drive\$name.renamed")) { Ok "delete" } else { Fail "delete" }

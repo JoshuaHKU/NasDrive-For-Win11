@@ -16,6 +16,7 @@ public static class ConnectionString
     /// <param name="proxyUrl">Global proxy URL applied when the drive uses a proxy.</param>
     public static string Build(DriveProfile p, string? obscuredPass, string? proxyUrl)
     {
+        if (p.IsNfs) return BuildNfs(p);
         var kv = new List<(string, string)>
         {
             ("url", p.Url),
@@ -36,6 +37,30 @@ public static class ConnectionString
         if (p.UseProxy && !string.IsNullOrEmpty(proxyUrl)) kv.Add(("override.http_proxy", proxyUrl));
 
         var sb = new StringBuilder(":webdav");
+        foreach (var (k, v) in kv)
+            sb.Append(',').Append(k).Append('=').Append(Quote(v));
+        sb.Append(':').Append(NormalizePath(p.BasePath));
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// <c>:nfs,host='nas',export='/volume1/share',uid=0,gid=0:/sub</c> for NasDrive's
+    /// own NFS backend. NFS has no password and cannot go through an HTTP proxy.
+    /// </summary>
+    private static string BuildNfs(DriveProfile p)
+    {
+        var timeout = System.Math.Clamp(p.TimeoutSec > 0 ? p.TimeoutSec : 30, 5, 60);
+        var kv = new List<(string, string)>
+        {
+            ("host", p.Host.Trim('[', ']')),
+            ("export", NormalizePath(p.NfsExport) is { Length: > 0 } e ? e : "/"),
+            ("uid", p.NfsUid.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("gid", p.NfsGid.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("privileged_port", p.NfsPrivilegedPort ? "true" : "false"),
+            ("rpc_timeout", $"{timeout}s"),
+            ("override.contimeout", $"{System.Math.Min(timeout, 15)}s"),
+        };
+        var sb = new StringBuilder(":nfs");
         foreach (var (k, v) in kv)
             sb.Append(',').Append(k).Append('=').Append(Quote(v));
         sb.Append(':').Append(NormalizePath(p.BasePath));

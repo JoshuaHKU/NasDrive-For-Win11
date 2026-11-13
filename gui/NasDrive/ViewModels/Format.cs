@@ -16,16 +16,18 @@ public static class Format
     }
 
     /// <summary>Turns a nasdrive/test or nasdrive/probe result into a localized message.</summary>
-    public static string EngineError(JsonObject r)
+    public static string EngineError(JsonObject r, bool nfs = false)
     {
         var code = r["errorCode"]?.GetValue<string>() ?? "unknown";
         var msg = r["errorMsg"]?.GetValue<string>() ?? "";
         var status = r["httpStatus"]?.GetValue<int>() ?? 0;
+        // NFS specific wording first (e.g. Err.nfs.refused), then the generic one.
         var key = "Err." + code;
+        if (nfs && Loc.Instance["Err.nfs." + code] != "Err.nfs." + code) key = "Err.nfs." + code;
         var text = Loc.Instance[key];
         if (text == key) text = Loc.T("Err.unknown", msg);
         else if (code == "http") text = Loc.T(key, status);
-        else if (code == "unknown") text = Loc.T(key, msg);
+        else if (code is "unknown" or "nfs") text = Loc.T(key, msg);
         return text;
     }
 }

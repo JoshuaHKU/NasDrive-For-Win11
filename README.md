@@ -1,9 +1,9 @@
 # NasDrive
 
-把 NAS 上的 WebDAV 目录映射为 Windows 本地盘符的开源工具（对标 RaiDrive）。
+把 NAS 上的 WebDAV 或 NFS 目录映射为 Windows 本地盘符的开源工具（对标 RaiDrive）。
 基于 [rclone](https://github.com/rclone/rclone)（作为 Go 库引用，未修改源码）和 [WinFsp](https://winfsp.dev)。
 
-> 状态：一期 MVP 开发中（v0.1.0）。设计见 `docs/NasDrive详细设计文档.md`。
+> 状态：v0.2.0，支持 WebDAV 与 NFSv3。设计见 `docs/NasDrive详细设计文档.md`、`docs/NFS支持设计.md`。
 
 ## 组成
 
@@ -11,7 +11,9 @@
 engine/        nasdrive-engine.exe（Go）：rclone WebDAV + cmount(WinFsp) + rc 控制接口
   main.go          入口，默认运行 engine 子命令
   engine_cmd.go    engine 子命令：启动 rc 服务，输出 NASDRIVE_READY 握手行
-  rc_nasdrive.go   自定义接口 nasdrive/version|health|test|mounts|probe；禁用 core/command
+  rc_nasdrive.go   自定义接口 nasdrive/version|health|test|mounts|probe|nfsexports；禁用 core/command
+  backend/nfs/     rclone nfs 存储后端（rclone 本身只有 NFS 服务端，没有客户端）
+  nfsclient/       NFSv3 + MOUNT + portmapper 客户端（纯 Go，可用特权源端口）
   platform_*.go    WinFsp 检测、磁盘空间
 gui/NasDrive/  NasDrive.exe（C# .NET 8 WPF）：托盘、主窗口、添加/编辑、设置
   Services/        引擎守护、rc 客户端、驱动器状态机、凭据管理器、注册表/外壳集成、多语言
@@ -33,7 +35,7 @@ ARCH=arm64 scripts/build.sh     # Windows on ARM
 安装包（在 Windows 上，需 Inno Setup 6；先把 WinFsp 安装包放到 `installer/deps/winfsp.msi`）：
 
 ```bat
-iscc /DArch=x64 /DVersion=0.1.0 installer\NasDrive.iss
+iscc /DArch=x64 /DVersion=0.2.0 installer\NasDrive.iss
 ```
 
 ## 测试
@@ -44,6 +46,14 @@ iscc /DArch=x64 /DVersion=0.1.0 installer\NasDrive.iss
 cmdkey /generic:NasDrive:test-nas /user:NAS用户名 /pass
 powershell -ExecutionPolicy Bypass -File test-mount.ps1 -Url https://nas:5006 -RemotePath /folder -Drive T: -SkipTlsVerify
 ```
+
+## NFS 使用说明（以群晖为例）
+
+1. 控制面板 → 文件服务 → NFS：勾选“启用 NFS 服务”。
+2. 控制面板 → 共享文件夹 → 选中共享 → 编辑 → NFS 权限 → 新增：主机填本机 IP 或网段（如 `192.168.1.0/24`），权限“可读写”，Squash 选“映射所有用户为 admin”，安全性 `sys`。
+3. NasDrive → 添加 → 服务类型选 NFS → 填 NAS 地址 → 点“列出共享”选择共享（如 `/volume1/share`）→ 可填子目录 → 连接。
+
+NFS 没有密码、按 IP 授权且不加密，只建议在可信局域网使用。NasDrive 默认从 <1024 的特权端口连接，所以无需勾选群晖的“允许来自非特权端口的连接”。
 
 ## 关键设计
 

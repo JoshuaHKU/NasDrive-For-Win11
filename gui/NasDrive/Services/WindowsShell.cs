@@ -102,6 +102,27 @@ public static class WindowsShell
         catch (Exception ex) { Log.Warn("SetDriveAppearance: " + ex.Message); }
     }
 
+    private const string MountPoints2Key = @"Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2";
+
+    /// <summary>
+    /// Explorer shows a network drive as "share (\\server) (X:)" unless the user has
+    /// renamed it, in which case it stores the name as _LabelFromReg under
+    /// MountPoints2\##server#share and shows "name (X:)". Set it so the drive shows
+    /// only its NasDrive name, letter and free/total space (like RaiDrive does).
+    /// </summary>
+    public static void SetNetworkDriveLabel(string unc, string label, string? comment)
+    {
+        try
+        {
+            var keyName = "##" + unc.TrimStart('\\').Replace('\\', '#');
+            using var key = Registry.CurrentUser.CreateSubKey($@"{MountPoints2Key}\{keyName}");
+            key.SetValue("_LabelFromReg", label, RegistryValueKind.String);
+            if (!string.IsNullOrEmpty(comment))
+                key.SetValue("_CommentFromDesktopINI", comment, RegistryValueKind.String);
+        }
+        catch (Exception ex) { Log.Warn("SetNetworkDriveLabel: " + ex.Message); }
+    }
+
     public static void ClearDriveAppearance(string letter)
     {
         try

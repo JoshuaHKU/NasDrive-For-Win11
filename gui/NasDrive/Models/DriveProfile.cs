@@ -11,7 +11,15 @@ public sealed class DriveProfile
     public string Name { get; set; } = "WebDAV";
     /// <summary>Drive letter without colon, e.g. "Z".</summary>
     public string DriveLetter { get; set; } = "Z";
+    /// <summary>"webdav" or "nfs".</summary>
     public string ServiceType { get; set; } = "webdav";
+    /// <summary>NFS export path on the server, e.g. "/volume1/share".</summary>
+    public string NfsExport { get; set; } = "";
+    /// <summary>AUTH_SYS identity sent to the NFS server.</summary>
+    public int NfsUid { get; set; }
+    public int NfsGid { get; set; }
+    /// <summary>Connect from a source port below 1024 (most NAS defaults require it).</summary>
+    public bool NfsPrivilegedPort { get; set; } = true;
     /// <summary>rclone webdav vendor: other, nextcloud, owncloud, ...</summary>
     public string Vendor { get; set; } = "other";
     public bool Https { get; set; } = true;
@@ -32,13 +40,17 @@ public sealed class DriveProfile
     public int Order { get; set; }
     public AdvancedOptions Advanced { get; set; } = new();
 
-    public string Url => $"{(Https ? "https" : "http")}://{HostForUrl}{PortSuffix}";
+    public bool IsNfs => string.Equals(ServiceType, "nfs", StringComparison.OrdinalIgnoreCase);
+
+    public string Url => IsNfs ? $"nfs://{HostForUrl}{NfsExport}" : $"{(Https ? "https" : "http")}://{HostForUrl}{PortSuffix}";
 
     private string HostForUrl => Host.Contains(':') && !Host.StartsWith('[') ? $"[{Host}]" : Host;
 
     private string PortSuffix => (Https && Port == 443) || (!Https && Port == 80) ? "" : $":{Port}";
 
-    public string DisplayAccount => Anonymous || string.IsNullOrEmpty(Username) ? Host : $"{Username}@{Host}";
+    public string DisplayAccount => IsNfs
+        ? (NfsUid == 0 ? Host : $"uid {NfsUid}@{Host}")
+        : Anonymous || string.IsNullOrEmpty(Username) ? Host : $"{Username}@{Host}";
 
     public string Mountpoint => DriveLetter.ToUpperInvariant() + ":";
 

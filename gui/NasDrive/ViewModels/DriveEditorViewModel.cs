@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -19,6 +20,9 @@ public sealed class DriveEditorViewModel : ObservableObject
     private bool _testOk;
     private bool _busy;
     private bool _showAdvanced;
+    private string _exportsStatus = "";
+    private bool _listingExports;
+    private string _exportsHost = "";
 
     public DriveEditorViewModel(MainViewModel main, DriveProfile? existing)
     {
@@ -42,6 +46,9 @@ public sealed class DriveEditorViewModel : ObservableObject
         CancelCommand = new RelayCommand(_main.CloseEditor);
         HelpCommand = new RelayCommand(() => WindowsShell.OpenUrl($"https://github.com/{AppInfo.UpdateRepo}#readme"));
         ToggleAdvancedCommand = new RelayCommand(() => ShowAdvanced = !ShowAdvanced);
+        RefreshExportsCommand = new AsyncCommand(() => RefreshExportsAsync(true), () => !_listingExports && !string.IsNullOrWhiteSpace(Host));
+        SelectExportCommand = new RelayCommand(o => { if (o is string e) NfsExport = e; });
+        if (_p.IsNfs && !string.IsNullOrWhiteSpace(_p.Host)) _ = RefreshExportsAsync(false);
     }
 
     public ICommand TestCommand { get; }
@@ -49,6 +56,94 @@ public sealed class DriveEditorViewModel : ObservableObject
     public ICommand CancelCommand { get; }
     public ICommand HelpCommand { get; }
     public ICommand ToggleAdvancedCommand { get; }
+    public ICommand RefreshExportsCommand { get; }
+    public ICommand SelectExportCommand { get; }
+
+    // --- protocol --------------------------------------------------------
+
+    public bool IsNfs
+    {
+        get => _p.IsNfs;
+        set
+        {
+            if (_p.IsNfs == value) return;
+            _p.ServiceType = value ? "nfs" : "webdav";
+            if (_isNew && (_p.Name == "WebDAV" || _p.Name == "NFS")) _p.Name = value ? "NFS" : "WebDAV";
+            if (value && _p.TimeoutSec > 60) _p.TimeoutSec = 30;
+            RaiseAll();
+            if (value && !string.IsNullOrWhiteSpace(_p.Host)) _ = RefreshExportsAsync(false);
+        }
+    }
+
+    public bool IsWebDav { get => !_p.IsNfs; set { if (value) IsNfs = false; } }
+
+    public string NfsExport
+    {
+        get => _p.NfsExport;
+        set { _p.NfsExport = ConnectionString.NormalizePath(value); OnPropertyChanged(); OnPropertyChanged(nameof(IsValid)); }
+    }
+
+    public string NfsUid { get => _p.NfsUid.ToString(); set { if (int.TryParse(value, out var v) && v >= 0) _p.NfsUid = v; OnPropertyChanged(); } }
+    public string NfsGid { get => _p.NfsGid.ToString(); set { if (int.TryParse(value, out var v) && v >= 0) _p.NfsGid = v; OnPropertyChanged(); } }
+    public bool NfsPrivilegedPort { get => _p.NfsPrivilegedPort; set { _p.NfsPrivilegedPort = value; OnPropertyChanged(); } }
+
+    public ObservableCollection<string> Exports { get; } = new();
+    public string ExportsStatus { get => _exportsStatus; private set => Set(ref _exportsStatus, value); }
+    public bool ExportMissing => _p.IsNfs && string.IsNullOrWhiteSpace(_p.NfsExport);
+
+    /// <summary>Asks the server for its exports (showmount -e). Quiet mode does not overwrite a typed export.</summary>
+    private async Task RefreshExportsAsync(bool explicitRequest)
+    {
+        var host = _p.Host.Trim();
+        if (host.Length == 0 || _listingExports) return;
+        if (!explicitRequest && host == _exportsHost) return;
+        _listingExports = true;
+        _exportsHost = host;
+        CommandManager.InvalidateRequerySuggested();
+        ExportsStatus = Loc.T("Editor.NfsListing");
+        try
+        {
+            var r = await AppServices.Drives.NfsExportsAsync(host);
+            Exports.Clear();
+            if (r["ok"]?.GetValue<bool>() == true && r["exports"] is System.Text.Json.Nodes.JsonArray arr)
+            {
+                foreach (var e in arr)
+                    if (e?["path"]?.GetValue<string>() is { Length: > 0 } path) Exports.Add(path);
+                ExportsStatus = Exports.Count == 0 ? Loc.T("Editor.NfsNoExports") : "";
+                if (string.IsNullOrWhiteSpace(_p.NfsExport) && Exports.Count == 1) NfsExport = Exports[0];
+            }
+            else
+            {
+                ExportsStatus = Loc.T("Editor.NfsExportsFailed", Format.EngineError(r, true));
+            }
+        }
+        catch (Exception ex)
+        {
+            ExportsStatus = Loc.T("Editor.NfsExportsFailed", ex.Message);
+        }
+        finally
+        {
+            _listingExports = false;
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    /// <summary>Splits /volume1/share/sub into export + sub path using known exports or the Synology/QNAP layout.</summary>
+    private void SplitNfsPath(string path)
+    {
+        path = ConnectionString.NormalizePath(path);
+        var export = Exports.Where(e => path == e || path.StartsWith(e.TrimEnd('/') + "/", StringComparison.Ordinal))
+                            .OrderByDescending(e => e.Length).FirstOrDefault();
+        if (export == null)
+        {
+            var parts = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var n = parts.Length >= 2 && (parts[0].StartsWith("volume", StringComparison.OrdinalIgnoreCase) || parts[0].StartsWith("share", StringComparison.OrdinalIgnoreCase)) ? 2 : Math.Min(1, parts.Length);
+            export = "/" + string.Join('/', parts.Take(n));
+        }
+        _p.NfsExport = export;
+        var rest = path.Length > export.Length ? path[export.Length..] : "/";
+        _p.BasePath = rest.Length == 0 ? "/" : rest;
+    }
 
     public string Title => Loc.T(_isNew ? "Editor.NewTitle" : "Editor.EditTitle");
     public string SaveText => Loc.T(_isNew ? "Editor.Connect" : "Editor.Save");
@@ -96,6 +191,16 @@ public sealed class DriveEditorViewModel : ObservableObject
         set
         {
             var v = (value ?? "").Trim();
+            if (v.StartsWith("nfs://", StringComparison.OrdinalIgnoreCase) && Uri.TryCreate(v, UriKind.Absolute, out var nfsUri))
+            {
+                _p.ServiceType = "nfs";
+                _p.Host = nfsUri.Host;
+                SplitNfsPath(Uri.UnescapeDataString(nfsUri.AbsolutePath));
+                if (_isNew && _p.Name == "WebDAV") _p.Name = "NFS";
+                RaiseAll();
+                _ = RefreshExportsAsync(false);
+                return;
+            }
             if (v.Contains("://") && Uri.TryCreate(v, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
             {
                 // A full URL was pasted: split it into its parts.
@@ -111,6 +216,7 @@ public sealed class DriveEditorViewModel : ObservableObject
             _p.Host = v.TrimEnd('/');
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsValid));
+            if (_p.IsNfs && _p.Host.Length > 0) _ = RefreshExportsAsync(false);
         }
     }
 
@@ -161,7 +267,7 @@ public sealed class DriveEditorViewModel : ObservableObject
     public bool UserMissing => NeedsCredentials && string.IsNullOrWhiteSpace(_p.Username);
     public bool PasswordMissing => NeedsCredentials && string.IsNullOrEmpty(_password) && !_hasStoredPassword;
 
-    private bool NeedsCredentials => !_p.Anonymous && !_p.PromptCredentials;
+    private bool NeedsCredentials => !_p.IsNfs && !_p.Anonymous && !_p.PromptCredentials;
 
     public bool IsValid
     {
@@ -170,7 +276,8 @@ public sealed class DriveEditorViewModel : ObservableObject
             OnPropertyChanged(nameof(HostMissing));
             OnPropertyChanged(nameof(UserMissing));
             OnPropertyChanged(nameof(PasswordMissing));
-            return !HostMissing && !UserMissing && !PasswordMissing && !string.IsNullOrEmpty(_p.DriveLetter);
+            OnPropertyChanged(nameof(ExportMissing));
+            return !HostMissing && !UserMissing && !PasswordMissing && !ExportMissing && !string.IsNullOrEmpty(_p.DriveLetter);
         }
     }
 
@@ -200,7 +307,7 @@ public sealed class DriveEditorViewModel : ObservableObject
             }
             else
             {
-                TestResult = Format.EngineError(r);
+                TestResult = Format.EngineError(r, _p.IsNfs);
             }
         }
         catch (Exception ex)
@@ -217,7 +324,7 @@ public sealed class DriveEditorViewModel : ObservableObject
     {
         if (!IsValid)
         {
-            Dialogs.Error(Loc.T("Editor.Required"));
+            Dialogs.Error(Loc.T(_p.IsNfs ? "Editor.RequiredNfs" : "Editor.Required"));
             return;
         }
         if (string.IsNullOrWhiteSpace(_p.Name)) _p.Name = _p.Host;
@@ -228,7 +335,7 @@ public sealed class DriveEditorViewModel : ObservableObject
         var wasConnected = !_isNew && runtime.State is DriveState.Connected or DriveState.Offline;
 
         // Store or clear the password before saving the profile.
-        if (_p.Anonymous || _p.PromptCredentials)
+        if (_p.IsNfs || _p.Anonymous || _p.PromptCredentials)
         {
             try { CredentialStore.Delete(CredentialStore.DriveKey(_p.Id)); } catch { }
         }

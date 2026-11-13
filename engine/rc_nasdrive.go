@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nasdrive/nasdrive/engine/nfsclient"
 	"github.com/rclone/rclone/backend/webdav/api"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/cache"
@@ -42,6 +43,13 @@ func init() {
 - timeout - overall timeout, e.g. "20s" (optional, default 20s)
 
 Returns ok, latencyMs, errorCode, errorMsg, httpStatus and quota fields.`,
+	})
+	rc.Add(rc.Call{
+		Path:  "nasdrive/nfsexports",
+		Fn:    rcNFSExports,
+		Title: "List the exports of an NFS server.",
+		Help: `Input: host (required), mountPort (default 0 = ask the portmapper), timeout (default 10s).
+Returns {ok, exports:[{path, groups}]} or {ok:false, errorCode, errorMsg}.`,
 	})
 	rc.Add(rc.Call{
 		Path:  "nasdrive/mounts",
@@ -156,6 +164,10 @@ func rcTest(ctx context.Context, in rc.Params) (rc.Params, error) {
 	if err != nil && !errors.Is(err, fs.ErrorIsFile) {
 		fillError(out, err)
 		return out, nil
+	}
+	// The Fs is not cached, so release its connections (NFS) when done.
+	if s, ok := f.(fs.Shutdowner); ok {
+		defer func() { _ = s.Shutdown(context.Background()) }()
 	}
 	if errors.Is(err, fs.ErrorIsFile) {
 		fillError(out, errPathIsFile)
@@ -293,6 +305,9 @@ func classifyError(err error) (code, msg string, httpStatus int) {
 		}
 		return "http", msg, httpStatus
 	}
+	if code, ok := classifyNFSError(err); ok {
+		return code, msg, 0
+	}
 	if errors.Is(err, fs.ErrorDirNotFound) {
 		return "not_found", msg, 404
 	}
@@ -340,4 +355,59 @@ func classifyError(err error) (code, msg string, httpStatus int) {
 		}
 	}
 	return "unknown", msg, 0
+}
+
+// classifyNFSError maps MOUNT/NFS/RPC failures to error codes.
+func classifyNFSError(err error) (string, bool) {
+	var me *nfsclient.MountError
+	if errors.As(err, &me) {
+		switch me.Status {
+		case 1, 13: // PERM, ACCES: client IP not allowed / privileged port required
+			return "nfs_denied", true
+		case 2:
+			return "not_found", true
+		case 20:
+			return "is_file", true
+		}
+		return "nfs", true
+	}
+	var ne *nfsclient.Error
+	if errors.As(err, &ne) {
+		switch ne.Status {
+		case nfsclient.ErrPerm, nfsclient.ErrAcces:
+			return "forbidden", true
+		case nfsclient.ErrNoEnt:
+			return "not_found", true
+		case nfsclient.ErrNotDir:
+			return "is_file", true
+		}
+		return "nfs", true
+	}
+	var re *nfsclient.RPCError
+	if errors.As(err, &re) {
+		// e.g. NFS/MOUNT not registered with the portmapper: service disabled
+		return "nfs_unavailable", true
+	}
+	return "", false
+}
+
+func rcNFSExports(ctx context.Context, in rc.Params) (rc.Params, error) {
+	host, err := in.GetString("host")
+	if err != nil {
+		return nil, err
+	}
+	mountPort, _ := in.GetInt64("mountPort")
+	timeout := getTimeout(in, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	exports, err := nfsclient.Exports(ctx, host, int(mountPort), nfsclient.DialOptions{Timeout: timeout})
+	if err != nil {
+		out := rc.Params{"ok": false}
+		fillError(out, err)
+		return out, nil
+	}
+	if exports == nil {
+		exports = []nfsclient.Export{}
+	}
+	return rc.Params{"ok": true, "exports": exports}, nil
 }

@@ -82,7 +82,7 @@ public sealed class DriveManager : IDisposable
                 throw new UserFacingException(Loc.T("Err.LetterInUse", p.Mountpoint));
 
             string? pass = null;
-            if (!p.Anonymous)
+            if (!p.Anonymous && !p.IsNfs)
             {
                 if (credentials == null && p.PromptCredentials)
                 {
@@ -130,6 +130,8 @@ public sealed class DriveManager : IDisposable
             if (!string.IsNullOrWhiteSpace(p.Advanced.DiskSpaceTotal))
                 vfsOpt["DiskSpaceTotalSize"] = p.Advanced.DiskSpaceTotal;
 
+            if (p.NetworkMode)
+                WindowsShell.SetNetworkDriveLabel(volName, p.Name, Loc.T("Shell.Comment", p.IsNfs ? "NFS" : "WebDAV"));
             Log.Info($"Mounting {p.Name} ({p.Url}{ConnectionString.NormalizePath(p.BasePath)}) on {p.Mountpoint}");
             try
             {
@@ -164,9 +166,15 @@ public sealed class DriveManager : IDisposable
     /// <summary>Tests the profile without mounting. Returns the raw engine result.</summary>
     public async Task<JsonObject> TestAsync(DriveProfile p, string? pass)
     {
-        var obscured = string.IsNullOrEmpty(pass) || p.Anonymous ? null : await Engine.ObscureAsync(pass).ConfigureAwait(false);
+        var obscured = string.IsNullOrEmpty(pass) || p.Anonymous || p.IsNfs ? null : await Engine.ObscureAsync(pass).ConfigureAwait(false);
         var fs = ConnectionString.Build(p, obscured, ProxyUrl());
         return await Engine.TestAsync(fs, Math.Clamp(p.TimeoutSec, 5, 60)).ConfigureAwait(false);
+    }
+
+    /// <summary>Lists the exports of an NFS server (raw engine result).</summary>
+    public async Task<JsonObject> NfsExportsAsync(string host)
+    {
+        return await Engine.CallAsync("nasdrive/nfsexports", new { host = host.Trim('[', ']'), timeout = "8s" }, TimeSpan.FromSeconds(15)).ConfigureAwait(false);
     }
 
     // --- disconnect -------------------------------------------------------
