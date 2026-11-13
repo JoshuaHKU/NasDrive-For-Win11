@@ -9,16 +9,21 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/nasdrive/nasdrive/engine/backend/synology"
 	"github.com/nasdrive/nasdrive/engine/nfsclient"
 	"github.com/rclone/rclone/backend/webdav/api"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/cache"
 	"github.com/rclone/rclone/fs/config"
+	"github.com/rclone/rclone/fs/config/configmap"
+	"github.com/rclone/rclone/fs/config/configstruct"
+	"github.com/rclone/rclone/fs/config/obscure"
 	"github.com/rclone/rclone/fs/rc"
 )
 
@@ -50,6 +55,19 @@ Returns ok, latencyMs, errorCode, errorMsg, httpStatus and quota fields.`,
 		Title: "List the exports of an NFS server.",
 		Help: `Input: host (required), mountPort (default 0 = ask the portmapper), timeout (default 10s).
 Returns {ok, exports:[{path, groups}]} or {ok:false, errorCode, errorMsg}.`,
+	})
+	rc.Add(rc.Call{
+		Path:  "nasdrive/synologin",
+		Fn:    rcSynoLogin,
+		Title: "Log in to Synology DSM with a 2-step verification code and return a device token.",
+		Help: `Input: fs (a :synology connection string), otp (the 6 digit code), timeout (default 20s).
+Returns {ok, deviceId} (deviceId is obscured, ready for the device_id option) or {ok:false, errorCode, errorMsg}.`,
+	})
+	rc.Add(rc.Call{
+		Path:  "nasdrive/listdirs",
+		Fn:    rcListDirs,
+		Title: "List the sub folders of a directory of a connection string (e.g. Synology shared folders).",
+		Help:  "Input: fs, dir (default root), timeout (default 20s). Returns {ok, dirs:[names]} or {ok:false, errorCode, errorMsg}.",
 	})
 	rc.Add(rc.Call{
 		Path:  "nasdrive/mounts",
@@ -305,6 +323,9 @@ func classifyError(err error) (code, msg string, httpStatus int) {
 		}
 		return "http", msg, httpStatus
 	}
+	if code, ok := classifySynoError(err); ok {
+		return code, msg, 0
+	}
 	if code, ok := classifyNFSError(err); ok {
 		return code, msg, 0
 	}
@@ -410,4 +431,122 @@ func rcNFSExports(ctx context.Context, in rc.Params) (rc.Params, error) {
 		exports = []nfsclient.Export{}
 	}
 	return rc.Params{"ok": true, "exports": exports}, nil
+}
+
+// classifySynoError maps DSM API error codes to error codes.
+func classifySynoError(err error) (string, bool) {
+	var se *synology.Error
+	if !errors.As(err, &se) {
+		return "", false
+	}
+	if se.Login {
+		switch se.Code {
+		case 400:
+			return "unauthorized", true
+		case 401, 402:
+			return "forbidden", true
+		case 403:
+			return "syno_2fa", true
+		case 404:
+			return "syno_2fa_bad", true
+		case 406:
+			return "syno_2fa_enforce", true
+		case 407:
+			return "syno_blocked", true
+		}
+		return "syno", true
+	}
+	switch se.Code {
+	case 105, 403, 405, 407:
+		return "forbidden", true
+	case 408:
+		return "not_found", true
+	case 415, 416:
+		return "syno_nospace", true
+	}
+	return "syno", true
+}
+
+func rcSynoLogin(ctx context.Context, in rc.Params) (rc.Params, error) {
+	fsString, err := in.GetString("fs")
+	if err != nil {
+		return nil, err
+	}
+	otp, err := in.GetString("otp")
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, getTimeout(in, 20*time.Second))
+	defer cancel()
+	info, _, _, m, err := fs.ConfigFs(fsString)
+	if err != nil {
+		return nil, err
+	}
+	if info.Name != "synology" {
+		return nil, errors.New("fs is not a synology remote")
+	}
+	// fs.NewFs applies the per-remote "override.*" options (timeouts, ignore
+	// certificate errors, proxy) to the context; do the same here since we
+	// log in without creating an Fs.
+	if ctx, err = withOverrides(ctx, m); err != nil {
+		return nil, err
+	}
+	did, err := synology.Login(ctx, m, strings.TrimSpace(otp))
+	if err != nil {
+		fs.Logf(nil, "synology 2FA login failed: %v", err)
+		out := rc.Params{"ok": false}
+		fillError(out, err)
+		return out, nil
+	}
+	return rc.Params{"ok": true, "deviceId": obscure.MustObscure(did)}, nil
+}
+
+func rcListDirs(ctx context.Context, in rc.Params) (rc.Params, error) {
+	fsString, err := in.GetString("fs")
+	if err != nil {
+		return nil, err
+	}
+	dir, _ := in.GetString("dir")
+	ctx, cancel := context.WithTimeout(ctx, getTimeout(in, 20*time.Second))
+	defer cancel()
+	out := rc.Params{"ok": false}
+	f, err := fs.NewFs(ctx, fsString)
+	if err != nil && !errors.Is(err, fs.ErrorIsFile) {
+		fillError(out, err)
+		return out, nil
+	}
+	if s, ok := f.(fs.Shutdowner); ok {
+		defer func() { _ = s.Shutdown(context.Background()) }()
+	}
+	entries, err := f.List(ctx, dir)
+	if err != nil {
+		fillError(out, err)
+		return out, nil
+	}
+	dirs := []string{}
+	for _, e := range entries {
+		if d, ok := e.(fs.Directory); ok {
+			dirs = append(dirs, path.Base(d.Remote()))
+		}
+	}
+	return rc.Params{"ok": true, "dirs": dirs}, nil
+}
+
+// withOverrides returns ctx with the remote's "override.<option>" values
+// applied to a copy of the global config, like fs.NewFs does.
+func withOverrides(ctx context.Context, m configmap.Getter) (context.Context, error) {
+	ov := configmap.Simple{}
+	for _, opt := range fs.ConfigOptionsInfo {
+		if v, ok := m.Get("override." + opt.Name); ok {
+			ov[opt.Name] = v
+		}
+	}
+	if len(ov) == 0 {
+		return ctx, nil
+	}
+	newCtx, ci := fs.AddConfig(ctx)
+	if err := configstruct.Set(ov, ci); err != nil {
+		return ctx, fmt.Errorf("override options: %w", err)
+	}
+	return newCtx, nil
 }

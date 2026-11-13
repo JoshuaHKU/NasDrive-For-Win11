@@ -82,6 +82,7 @@ public partial class App : Application
         AppServices.Drives = new DriveManager(AppServices.Engine, AppServices.Profiles, AppServices.Settings)
         {
             PromptCredentials = p => Dispatcher.Invoke(() => CredentialPromptWindow.Ask(p)),
+            PromptOtp = (p, err) => Dispatcher.Invoke(() => OtpPromptWindow.Ask($"{p.Name} – {p.Username}@{p.Host}", err)),
         };
         AppServices.Engine.EngineFailed += msg => Dispatcher.BeginInvoke(() =>
         {

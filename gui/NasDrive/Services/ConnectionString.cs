@@ -14,20 +14,19 @@ public static class ConnectionString
 {
     /// <param name="obscuredPass">Password already obscured with core/obscure, or null.</param>
     /// <param name="proxyUrl">Global proxy URL applied when the drive uses a proxy.</param>
-    public static string Build(DriveProfile p, string? obscuredPass, string? proxyUrl)
+    public static string Build(DriveProfile p, string? obscuredPass, string? proxyUrl, string? obscuredDeviceId = null)
     {
         if (p.IsNfs) return BuildNfs(p);
-        var kv = new List<(string, string)>
-        {
-            ("url", p.Url),
-            ("vendor", string.IsNullOrEmpty(p.Vendor) ? "other" : p.Vendor),
-        };
+        var kv = p.IsSynology
+            ? new List<(string, string)> { ("url", p.Url) }
+            : new List<(string, string)> { ("url", p.Url), ("vendor", string.IsNullOrEmpty(p.Vendor) ? "other" : p.Vendor) };
         if (!p.Anonymous && !string.IsNullOrEmpty(p.Username))
         {
             kv.Add(("user", p.Username));
             if (!string.IsNullOrEmpty(obscuredPass)) kv.Add(("pass", obscuredPass));
         }
-        if (p.Advanced.Headers.Count > 0)
+        if (p.IsSynology && !string.IsNullOrEmpty(obscuredDeviceId)) kv.Add(("device_id", obscuredDeviceId));
+        if (!p.IsSynology && p.Advanced.Headers.Count > 0)
             kv.Add(("headers", string.Join(",", p.Advanced.Headers.Select(CsvQuote))));
         // Per Fs overrides of global options, see "override." in rclone fs/newfs.go
         var timeout = p.TimeoutSec > 0 ? p.TimeoutSec : 100;
@@ -36,7 +35,7 @@ public static class ConnectionString
         if (p.SkipTlsVerify) kv.Add(("override.no_check_certificate", "true"));
         if (p.UseProxy && !string.IsNullOrEmpty(proxyUrl)) kv.Add(("override.http_proxy", proxyUrl));
 
-        var sb = new StringBuilder(":webdav");
+        var sb = new StringBuilder(p.IsSynology ? ":synology" : ":webdav");
         foreach (var (k, v) in kv)
             sb.Append(',').Append(k).Append('=').Append(Quote(v));
         sb.Append(':').Append(NormalizePath(p.BasePath));

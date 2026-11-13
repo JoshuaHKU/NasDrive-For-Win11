@@ -79,7 +79,12 @@
                                 <TextBlock Text="NFS" />
                             </StackPanel>
                         </RadioButton>
-                        <TextBlock Text="Synology · QNAP · ASUSTOR · Nextcloud" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                        <RadioButton Style="{StaticResource SegmentRadio}" GroupName="proto" IsChecked="{Binding IsSynology}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE968;" Style="{StaticResource Icon}" Margin="0,0,6,0" />
+                                <TextBlock Text="{v:T Editor.Synology}" />
+                            </StackPanel>
+                        </RadioButton>
                     </WrapPanel>
                 </Border>
 
@@ -104,8 +109,8 @@
                 <!-- Options -->
                 <UniformGrid Grid.Row="3" Grid.Column="1" Columns="2" Margin="0,0,0,10">
                     <CheckBox IsChecked="{Binding AutoConnect}" Content="{v:T Editor.AutoConnect}" />
-                    <CheckBox IsChecked="{Binding UseProxy}" Content="{v:T Editor.Proxy}" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
-                    <CheckBox IsChecked="{Binding PromptCredentials}" Content="{v:T Editor.PromptCred}" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
+                    <CheckBox IsChecked="{Binding UseProxy}" Content="{v:T Editor.Proxy}" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
+                    <CheckBox IsChecked="{Binding PromptCredentials}" Content="{v:T Editor.PromptCred}" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
                     <CheckBox IsChecked="{Binding ReadOnly}" Content="{v:T Editor.ReadOnly}" />
                     <CheckBox IsChecked="{Binding LocalDisk}" Content="{v:T Editor.LocalDisk}" />
                 </UniformGrid>
@@ -120,8 +125,8 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="70" />
                     </Grid.ColumnDefinitions>
-                    <CheckBox IsChecked="{Binding Https}" Content="HTTPS" Margin="0,0,8,0" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
-                    <TextBlock Grid.Column="1" Text="{Binding Scheme}" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource DimTextBrush}" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
+                    <CheckBox IsChecked="{Binding Https}" Content="HTTPS" Margin="0,0,8,0" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Scheme}" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource DimTextBrush}" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
                     <TextBlock Grid.Column="1" Text="nfs://" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource DimTextBrush}" Visibility="{Binding IsNfs, Converter={StaticResource BoolToVis}}" />
                     <Grid Grid.Column="2">
                         <TextBox x:Name="HostBox" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged, Delay=400}" />
@@ -130,14 +135,44 @@
                         <Border BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1" IsHitTestVisible="False"
                                 Visibility="{Binding HostMissing, Converter={StaticResource BoolToVis}}" />
                     </Grid>
-                    <TextBlock Grid.Column="3" Text=":" Margin="4,0" VerticalAlignment="Center" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
-                    <TextBox Grid.Column="4" Text="{Binding Port, UpdateSourceTrigger=LostFocus}" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Grid.Column="3" Text=":" Margin="4,0" VerticalAlignment="Center" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
+                    <TextBox Grid.Column="4" Text="{Binding Port, UpdateSourceTrigger=LostFocus}" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
                 </Grid>
-                <Grid Grid.Row="5" Grid.Column="1" Margin="0,0,0,4" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}">
-                    <TextBox x:Name="PathBox" Text="{Binding BasePath, UpdateSourceTrigger=PropertyChanged}" />
-                    <TextBlock Text="{v:T Editor.Path}" Style="{StaticResource Dim}" Margin="7,0" VerticalAlignment="Center" IsHitTestVisible="False"
-                               Visibility="{Binding Text.IsEmpty, ElementName=PathBox, Converter={StaticResource BoolToVis}}" />
-                </Grid>
+                <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,0,0,4" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid>
+                            <TextBox x:Name="PathBox" Text="{Binding BasePath, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Text="{v:T Editor.Path}" Style="{StaticResource Dim}" Margin="7,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                       Visibility="{Binding Text.IsEmpty, ElementName=PathBox, Converter={StaticResource BoolToVis}}" />
+                        </Grid>
+                        <Button Grid.Column="1" Style="{StaticResource DialogButton}" Margin="8,0,0,0" Command="{Binding RefreshSharesCommand}" Visibility="{Binding IsSynology, Converter={StaticResource BoolToVis}}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE72C;" Style="{StaticResource Icon}" Margin="0,0,5,0" />
+                                <TextBlock Text="{v:T Editor.SynoShares}" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Shares}" Margin="0,4,0,0" Visibility="{Binding IsSynology, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource DialogButton}" Margin="0,0,6,4" Padding="8,2" Content="{Binding}"
+                                        Command="{Binding DataContext.SelectShareCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding SharesStatus}" Style="{StaticResource Dim}" TextWrapping="Wrap" FontSize="11" Visibility="{Binding IsSynology, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Text="{v:T Editor.SynoHint}" Style="{StaticResource Dim}" TextWrapping="Wrap" FontSize="11" Visibility="{Binding IsSynology, Converter={StaticResource BoolToVis}}" />
+                </StackPanel>
                 <!-- NFS export + sub path -->
                 <TextBlock Grid.Row="5" Text="{v:T Editor.NfsExport}" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,6,10,0" Visibility="{Binding IsNfs, Converter={StaticResource BoolToVis}}" />
                 <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,0,0,4" Visibility="{Binding IsNfs, Converter={StaticResource BoolToVis}}">
@@ -183,8 +218,8 @@
                 </StackPanel>
 
                 <!-- Account -->
-                <TextBlock Grid.Row="6" Text="{v:T Editor.Account}" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,10,10,0" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
-                <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,6,0,6" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}">
+                <TextBlock Grid.Row="6" Text="{v:T Editor.Account}" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,10,10,0" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
+                <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,6,0,6" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -205,7 +240,7 @@
                             <Border BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1" IsHitTestVisible="False"
                                     Visibility="{Binding PasswordMissing, Converter={StaticResource BoolToVis}}" />
                         </Grid>
-                        <CheckBox Grid.Column="3" IsChecked="{Binding Anonymous}" Content="{v:T Editor.Anonymous}" Margin="10,0,0,0" />
+                        <CheckBox Grid.Column="3" IsChecked="{Binding Anonymous}" Content="{v:T Editor.Anonymous}" Margin="10,0,0,0" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
                     </Grid>
                 </StackPanel>
 
@@ -222,7 +257,7 @@
                 </StackPanel>
 
                 <!-- TLS and timeout -->
-                <TextBlock Grid.Row="7" Text="{v:T Editor.Security}" Style="{StaticResource FieldLabel}" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Grid.Row="7" Text="{v:T Editor.Security}" Style="{StaticResource FieldLabel}" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
                 <TextBlock Grid.Row="7" Text="{v:T Editor.NfsSecurity}" Style="{StaticResource FieldLabel}" Visibility="{Binding IsNfs, Converter={StaticResource BoolToVis}}" />
                 <Grid Grid.Row="7" Grid.Column="1" Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>
@@ -231,7 +266,7 @@
                         <ColumnDefinition Width="80" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <StackPanel Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}">
                         <CheckBox IsChecked="{Binding SkipTlsVerify}" Content="{v:T Editor.SkipTls}" IsEnabled="{Binding Https}" />
                         <TextBlock Text="{v:T Editor.HttpWarning}" Foreground="{StaticResource WarningBrush}" FontSize="11"
                                    Visibility="{Binding ShowHttpWarning, Converter={StaticResource BoolToVis}}" />
@@ -265,8 +300,6 @@
                         <RowDefinition Height="30" />
                         <RowDefinition Height="30" />
                     </Grid.RowDefinitions>
-                    <TextBlock Text="{v:T Editor.Vendor}" Style="{StaticResource FieldLabel}" FontWeight="Normal" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
-                    <ComboBox Grid.Column="1" ItemsSource="{Binding Vendors}" SelectedItem="{Binding Vendor}" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
                     <TextBlock Grid.Column="2" Text="{v:T Editor.CacheMode}" Style="{StaticResource FieldLabel}" FontWeight="Normal" Margin="12,0,10,0" />
                     <ComboBox Grid.Column="3" ItemsSource="{Binding CacheModes}" SelectedItem="{Binding CacheMode}" />
                     <TextBlock Grid.Row="1" Text="{v:T Editor.CacheMaxSize}" Style="{StaticResource FieldLabel}" FontWeight="Normal" />

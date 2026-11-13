@@ -17,6 +17,8 @@ public static class CredentialStore
 
     public static string DriveKey(string profileId) => "drive:" + profileId;
     public const string ProxyKey = "proxy";
+    /// <summary>Synology 2-step verification device token (obscured) for a drive.</summary>
+    public static string SynoDeviceKey(string profileId) => "syno-device:" + profileId;
     public const string EngineKey = "engine";
 
     public static void Write(string key, string userName, string secret)

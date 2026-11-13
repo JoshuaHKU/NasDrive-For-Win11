@@ -3,7 +3,7 @@
 把 NAS 上的 WebDAV 或 NFS 目录映射为 Windows 本地盘符的开源工具（对标 RaiDrive）。
 基于 [rclone](https://github.com/rclone/rclone)（作为 Go 库引用，未修改源码）和 [WinFsp](https://winfsp.dev)。
 
-> 状态：v0.2.0，支持 WebDAV 与 NFSv3。设计见 `docs/NasDrive详细设计文档.md`、`docs/NFS支持设计.md`。
+> 状态：v0.3.0，支持 WebDAV、NFSv3 与群晖 DSM。设计见 `docs/NasDrive详细设计文档.md`、`docs/NFS支持设计.md`。
 
 ## 组成
 
@@ -35,7 +35,7 @@ ARCH=arm64 scripts/build.sh     # Windows on ARM
 安装包（在 Windows 上，需 Inno Setup 6；先把 WinFsp 安装包放到 `installer/deps/winfsp.msi`）：
 
 ```bat
-iscc /DArch=x64 /DVersion=0.2.0 installer\NasDrive.iss
+iscc /DArch=x64 /DVersion=0.3.0 installer\NasDrive.iss
 ```
 
 ## 测试

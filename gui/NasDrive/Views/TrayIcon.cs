@@ -165,51 +165,30 @@ public sealed class TrayIcon : IDisposable
         _icon.Text = connected > 0 ? $"NasDrive – {connected} / {drives.Count}" : "NasDrive";
         if (key == _iconKey) return;
         _iconKey = key;
-        var color = key switch
-        {
-            "warn" => Color.FromArgb(0xE3, 0xB3, 0x41),
-            "on" => Color.FromArgb(0x1E, 0x90, 0xFF),
-            _ => Color.FromArgb(0x9A, 0x9A, 0x9A),
-        };
         var old = _currentIcon;
-        _currentIcon = DrawIcon(color);
+        _currentIcon = LoadTrayIcon(key);
         _icon.Icon = _currentIcon;
-        if (old != null)
-        {
-            DestroyIcon(old.Handle);
-            old.Dispose();
-        }
+        old?.Dispose();
     }
 
-    /// <summary>Draws a simple drive glyph so no image assets are needed per state.</summary>
-    private static Icon DrawIcon(Color color)
-    {
-        using var bmp = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-            using var body = new SolidBrush(color);
-            using var path = RoundedRect(new Rectangle(2, 8, 28, 18), 4);
-            g.FillPath(body, path);
-            using var light = new SolidBrush(Color.White);
-            g.FillEllipse(light, 22, 19, 4, 4);
-            using var pen = new Pen(Color.White, 2);
-            g.DrawLine(pen, 7, 21, 17, 21);
-        }
-        return Icon.FromHandle(bmp.GetHicon());
-    }
+    [DllImport("user32.dll")] private static extern uint GetDpiForSystem();
+    [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
+    private const int SM_CXSMICON = 49;
 
-    private static GraphicsPath RoundedRect(Rectangle r, int radius)
+    /// <summary>
+    /// Loads the pre-rendered tray icon for the state at the exact small-icon size
+    /// for the current DPI (16 px at 100 %, 24 px at 150 %, 32 px at 200 % ...), so
+    /// Windows never scales it and it stays sharp.
+    /// </summary>
+    private static Icon LoadTrayIcon(string key)
     {
-        var p = new GraphicsPath();
-        var d = radius * 2;
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
+        int size;
+        try { size = GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForSystem()); }
+        catch { size = Forms.SystemInformation.SmallIconSize.Width; }
+        if (size <= 0) size = 16;
+        var uri = new Uri($"pack://application:,,,/Assets/tray-{key}.ico");
+        using var stream = Application.GetResourceStream(uri)!.Stream;
+        return new Icon(stream, new System.Drawing.Size(size, size));
     }
 
     public void Dispose()
@@ -218,8 +197,7 @@ public sealed class TrayIcon : IDisposable
         _icon.Dispose();
         if (_currentIcon != null)
         {
-            DestroyIcon(_currentIcon.Handle);
-            _currentIcon.Dispose();
+            _currentIcon.Dispose(); // owns its handle (loaded from the .ico)
             _currentIcon = null;
         }
         _anchor.Close();

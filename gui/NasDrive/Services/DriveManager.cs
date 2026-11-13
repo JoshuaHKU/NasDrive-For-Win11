@@ -46,6 +46,9 @@ public sealed class DriveManager : IDisposable
     /// <summary>Asks the UI for credentials. Returns (user, pass) or null if cancelled.</summary>
     public Func<DriveProfile, Task<(string User, string Pass)?>>? PromptCredentials { get; set; }
 
+    /// <summary>Asks the UI for a Synology 2-step verification code (profile, error to show). Null = cancelled.</summary>
+    public Func<DriveProfile, string?, string?>? PromptOtp { get; set; }
+
     public DriveManager(EngineSupervisor engine, ProfileStore profiles, SettingsStore settings)
     {
         _engine = engine;
@@ -106,7 +109,19 @@ public sealed class DriveManager : IDisposable
             }
 
             var obscured = string.IsNullOrEmpty(pass) ? null : await Engine.ObscureAsync(pass).ConfigureAwait(false);
-            var fs = ConnectionString.Build(p, obscured, ProxyUrl());
+            var fs = ConnectionString.Build(p, obscured, ProxyUrl(), SynoDevice(p));
+            if (p.IsSynology)
+            {
+                // Log in first so a 2-step verification code can be asked for
+                // before mounting (the mount itself can't prompt).
+                var ready = await EnsureSynologyLoginAsync(p, obscured).ConfigureAwait(false);
+                if (ready == null)
+                {
+                    Set(p.Id, r => { r.State = DriveState.Disconnected; r.WantConnected = false; });
+                    return;
+                }
+                fs = ready;
+            }
             var volName = VolumeName(p);
             var s = _settings.Current;
             var mountOpt = new Dictionary<string, object>
@@ -131,7 +146,7 @@ public sealed class DriveManager : IDisposable
                 vfsOpt["DiskSpaceTotalSize"] = p.Advanced.DiskSpaceTotal;
 
             if (p.NetworkMode)
-                WindowsShell.SetNetworkDriveLabel(volName, p.Name, Loc.T("Shell.Comment", p.IsNfs ? "NFS" : "WebDAV"));
+                WindowsShell.SetNetworkDriveLabel(volName, p.Name, Loc.T("Shell.Comment", p.IsNfs ? "NFS" : p.IsSynology ? "Synology" : "WebDAV"));
             Log.Info($"Mounting {p.Name} ({p.Url}{ConnectionString.NormalizePath(p.BasePath)}) on {p.Mountpoint}");
             try
             {
@@ -167,8 +182,65 @@ public sealed class DriveManager : IDisposable
     public async Task<JsonObject> TestAsync(DriveProfile p, string? pass)
     {
         var obscured = string.IsNullOrEmpty(pass) || p.Anonymous || p.IsNfs ? null : await Engine.ObscureAsync(pass).ConfigureAwait(false);
-        var fs = ConnectionString.Build(p, obscured, ProxyUrl());
+        var fs = ConnectionString.Build(p, obscured, ProxyUrl(), SynoDevice(p));
         return await Engine.TestAsync(fs, Math.Clamp(p.TimeoutSec, 5, 60)).ConfigureAwait(false);
+    }
+
+    // --- Synology ---------------------------------------------------------
+
+    private static string? SynoDevice(DriveProfile p)
+    {
+        if (!p.IsSynology) return null;
+        try { return CredentialStore.Read(CredentialStore.SynoDeviceKey(p.Id))?.Secret; }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Logs in with a 2-step verification code and stores the device token so
+    /// later logins need no code. Returns the raw engine result.
+    /// </summary>
+    public async Task<JsonObject> SynologyLoginAsync(DriveProfile p, string? pass, string otp)
+    {
+        var obscured = string.IsNullOrEmpty(pass) ? null : await Engine.ObscureAsync(pass).ConfigureAwait(false);
+        var fs = ConnectionString.Build(p, obscured, ProxyUrl());
+        var r = await Engine.CallAsync("nasdrive/synologin", new { fs, otp, timeout = "20s" }, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+        if (r["ok"]?.GetValue<bool>() == true && r["deviceId"]?.GetValue<string>() is { Length: > 0 } did)
+            CredentialStore.Write(CredentialStore.SynoDeviceKey(p.Id), p.Username, did);
+        return r;
+    }
+
+    /// <summary>Lists the sub folders of the server root (Synology: the shared folders).</summary>
+    public async Task<JsonObject> ListRootDirsAsync(DriveProfile p, string? pass)
+    {
+        var root = p.Clone();
+        root.BasePath = "/";
+        var obscured = string.IsNullOrEmpty(pass) ? null : await Engine.ObscureAsync(pass).ConfigureAwait(false);
+        var fs = ConnectionString.Build(root, obscured, ProxyUrl(), SynoDevice(p));
+        return await Engine.CallAsync("nasdrive/listdirs", new { fs, timeout = "20s" }, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+    }
+
+    /// <summary>Returns a connection string that can log in, asking for a 2FA code if needed; null if cancelled.</summary>
+    private async Task<string?> EnsureSynologyLoginAsync(DriveProfile p, string? obscured)
+    {
+        string? prompt = null;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var fs = ConnectionString.Build(p, obscured, ProxyUrl(), SynoDevice(p));
+            var r = await Engine.TestAsync(fs, Math.Clamp(p.TimeoutSec, 5, 60)).ConfigureAwait(false);
+            if (r["ok"]?.GetValue<bool>() == true) return fs;
+            var code = r["errorCode"]?.GetValue<string>();
+            if (code is not ("syno_2fa" or "syno_2fa_bad")) throw new UserFacingException(ViewModels.Format.EngineError(r, "syno"));
+            try { CredentialStore.Delete(CredentialStore.SynoDeviceKey(p.Id)); } catch { }
+            var otp = PromptOtp?.Invoke(p, prompt);
+            if (string.IsNullOrEmpty(otp)) return null;
+            var lr = await Engine.CallAsync("nasdrive/synologin", new { fs = ConnectionString.Build(p, obscured, ProxyUrl()), otp, timeout = "20s" },
+                                            TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            if (lr["ok"]?.GetValue<bool>() == true && lr["deviceId"]?.GetValue<string>() is { Length: > 0 } did)
+                CredentialStore.Write(CredentialStore.SynoDeviceKey(p.Id), p.Username, did);
+            else
+                prompt = ViewModels.Format.EngineError(lr, "syno");
+        }
+        throw new UserFacingException(Loc.T("Err.syno_2fa_bad"));
     }
 
     /// <summary>Lists the exports of an NFS server (raw engine result).</summary>

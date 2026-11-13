@@ -1,7 +1,7 @@
 // nasdrive-engine is the background engine of NasDrive.
 //
 // It embeds rclone as a library and exposes only the parts NasDrive needs:
-// the WebDAV backend, NasDrive's own NFS backend, WinFsp based mounting (cmount) and the rc remote
+// the WebDAV backend, NasDrive's own NFS and Synology backends, WinFsp based mounting (cmount) and the rc remote
 // control API, plus a few NasDrive specific rc calls (see rc_nasdrive.go).
 //
 // It is started by the NasDrive GUI as:
@@ -15,9 +15,10 @@ package main
 import (
 	"os"
 
-	_ "github.com/nasdrive/nasdrive/engine/backend/nfs" // the NFSv3 client
-	_ "github.com/rclone/rclone/backend/local"          // needed by the VFS cache
-	_ "github.com/rclone/rclone/backend/webdav"         // the WebDAV client
+	_ "github.com/nasdrive/nasdrive/engine/backend/nfs"      // the NFSv3 client
+	_ "github.com/nasdrive/nasdrive/engine/backend/synology" // Synology DSM File Station
+	_ "github.com/rclone/rclone/backend/local"               // needed by the VFS cache
+	_ "github.com/rclone/rclone/backend/webdav"              // the WebDAV client
 	"github.com/rclone/rclone/cmd"
 	_ "github.com/rclone/rclone/cmd/cmount" // WinFsp/FUSE mount (build with -tags cmount)
 	_ "github.com/rclone/rclone/cmd/rcd"    // useful for debugging: nasdrive-engine rcd
@@ -25,7 +26,7 @@ import (
 )
 
 // Version is set at build time with -ldflags "-X main.Version=x.y.z"
-var Version = "0.2.0-dev"
+var Version = "0.3.0-dev"
 
 func main() {
 	// Default to the engine command when started without arguments so a

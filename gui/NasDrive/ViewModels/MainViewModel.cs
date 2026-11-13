@@ -147,6 +147,7 @@ public sealed class MainViewModel : ObservableObject
     {
         if (item.State != DriveState.Disconnected) return;
         if (!Dialogs.Confirm(Loc.T("Confirm.Delete", item.Name))) return;
+        try { CredentialStore.Delete(CredentialStore.SynoDeviceKey(item.Id)); } catch { }
         try { CredentialStore.Delete(CredentialStore.DriveKey(item.Id)); }
         catch (Exception ex) { Log.Warn("Delete credential: " + ex.Message); }
         AppServices.Profiles.Remove(item.Id);

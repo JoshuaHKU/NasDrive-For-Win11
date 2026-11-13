@@ -14,6 +14,12 @@
     powershell -ExecutionPolicy Bypass -File test-mount.ps1 `
       -Url https://192.168.1.10:5006 -RemotePath /some/folder -Drive T: -SkipTlsVerify
 
+  Synology DSM (File Station API). Uses the password and 2FA device token that
+  NasDrive saved for an existing Synology drive (add it in the GUI once):
+
+    powershell -ExecutionPolicy Bypass -File test-mount.ps1 `
+      -Protocol synology -Url https://192.168.1.10:5001 -RemotePath /share/sub -SkipTlsVerify -ProfileId <id>
+
   NFS (no credential needed; the NAS must allow this PC's IP):
 
     powershell -ExecutionPolicy Bypass -File test-mount.ps1 `
@@ -26,7 +32,8 @@ param(
     [Parameter(Mandatory)] [string] $Url,
     [Parameter(Mandatory)] [string] $RemotePath,
     [string] $Drive = "T:",
-    [ValidateSet("webdav", "nfs")] [string] $Protocol = "webdav",
+    [ValidateSet("webdav", "nfs", "synology")] [string] $Protocol = "webdav",
+    [string] $ProfileId = "",
     [string] $Export = "",
     [string] $Credential = "NasDrive:test-nas",
     [string] $Engine = (Join-Path $PSScriptRoot "nasdrive-engine.exe"),
@@ -64,7 +71,13 @@ function Ok($msg) { Write-Host "    OK  $msg" -ForegroundColor Green }
 function Fail($msg) { Write-Host "    FAIL $msg" -ForegroundColor Red; $script:failed++ }
 $failed = 0
 
-if ($Protocol -eq "webdav") {
+$deviceId = $null
+if ($Protocol -eq "synology" -and $ProfileId) {
+    $Credential = "NasDrive:drive:$ProfileId"
+    $dev = [NdCred]::Read("NasDrive:syno-device:$ProfileId")
+    if ($dev) { $deviceId = $dev[1] }
+}
+if ($Protocol -ne "nfs") {
     $cred = [NdCred]::Read($Credential)
     if (-not $cred) { throw "Credential '$Credential' not found. Create it with: cmdkey /generic:$Credential /user:NAS_USER /pass" }
     $user = $cred[0]; $pass = $cred[1]
@@ -111,6 +124,17 @@ try {
         Step "Testing connection to nfs://$Url$Export$RemotePath"
         $fs = ":nfs,host=$(& $q $Url),export=$(& $q $Export),rpc_timeout='30s':" + $RemotePath
         $volHost = $Url
+    } elseif ($Protocol -eq "synology") {
+        Step "Testing Synology connection to $Url$RemotePath"
+        $obscured = (Rc "core/obscure" @{ clear = $pass }).obscured
+        $fs = ":synology,url=$(& $q $Url),user=$(& $q $user),pass=$(& $q $obscured),override.timeout='100s',override.contimeout='15s'"
+        if ($deviceId) { $fs += ",device_id=$(& $q $deviceId)" }
+        if ($SkipTlsVerify) { $fs += ",override.no_check_certificate='true'" }
+        $root = $fs + ":"
+        $fs += ":" + $RemotePath
+        $volHost = ([Uri]$Url).Host
+        $ld = Rc "nasdrive/listdirs" @{ fs = $root }
+        if ($ld.ok) { Ok "shared folders: $($ld.dirs -join ', ')" } else { Fail "list shares: $($ld.errorCode) $($ld.errorMsg)" }
     } else {
         Step "Testing connection to $Url$RemotePath"
         $obscured = (Rc "core/obscure" @{ clear = $pass }).obscured

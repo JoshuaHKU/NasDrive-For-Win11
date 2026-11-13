@@ -14,7 +14,7 @@
     <AssemblyName>NasDrive</AssemblyName>
     <ApplicationIcon>Assets\NasDrive.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Product>NasDrive</Product>
     <Description>Map WebDAV NAS folders to Windows drive letters</Description>
     <Copyright>NasDrive contributors</Copyright>
@@ -28,6 +28,9 @@
 
   <ItemGroup>
     <Resource Include="Assets\NasDrive.ico" />
+    <Resource Include="Assets\tray-on.ico" />
+    <Resource Include="Assets\tray-off.ico" />
+    <Resource Include="Assets\tray-warn.ico" />
   </ItemGroup>
 
 </Project>

@@ -11,7 +11,7 @@ public sealed class DriveProfile
     public string Name { get; set; } = "WebDAV";
     /// <summary>Drive letter without colon, e.g. "Z".</summary>
     public string DriveLetter { get; set; } = "Z";
-    /// <summary>"webdav" or "nfs".</summary>
+    /// <summary>"webdav", "nfs" or "synology".</summary>
     public string ServiceType { get; set; } = "webdav";
     /// <summary>NFS export path on the server, e.g. "/volume1/share".</summary>
     public string NfsExport { get; set; } = "";
@@ -41,6 +41,7 @@ public sealed class DriveProfile
     public AdvancedOptions Advanced { get; set; } = new();
 
     public bool IsNfs => string.Equals(ServiceType, "nfs", StringComparison.OrdinalIgnoreCase);
+    public bool IsSynology => string.Equals(ServiceType, "synology", StringComparison.OrdinalIgnoreCase);
 
     public string Url => IsNfs ? $"nfs://{HostForUrl}{NfsExport}" : $"{(Https ? "https" : "http")}://{HostForUrl}{PortSuffix}";
 

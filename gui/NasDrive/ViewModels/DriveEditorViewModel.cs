@@ -48,6 +48,8 @@ public sealed class DriveEditorViewModel : ObservableObject
         ToggleAdvancedCommand = new RelayCommand(() => ShowAdvanced = !ShowAdvanced);
         RefreshExportsCommand = new AsyncCommand(() => RefreshExportsAsync(true), () => !_listingExports && !string.IsNullOrWhiteSpace(Host));
         SelectExportCommand = new RelayCommand(o => { if (o is string e) NfsExport = e; });
+        RefreshSharesCommand = new AsyncCommand(RefreshSharesAsync, () => !_listingShares && !_busy && !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(Username));
+        SelectShareCommand = new RelayCommand(o => { if (o is string sh) BasePath = "/" + sh; });
         if (_p.IsNfs && !string.IsNullOrWhiteSpace(_p.Host)) _ = RefreshExportsAsync(false);
     }
 
@@ -58,24 +60,102 @@ public sealed class DriveEditorViewModel : ObservableObject
     public ICommand ToggleAdvancedCommand { get; }
     public ICommand RefreshExportsCommand { get; }
     public ICommand SelectExportCommand { get; }
+    public ICommand RefreshSharesCommand { get; }
+    public ICommand SelectShareCommand { get; }
 
     // --- protocol --------------------------------------------------------
 
-    public bool IsNfs
+    private static readonly string[] DefaultNames = { "WebDAV", "NFS", "Synology" };
+
+    /// <summary>Switches the service type, adjusting defaults that depend on it.</summary>
+    private void SetService(string type)
     {
-        get => _p.IsNfs;
-        set
+        if (string.Equals(_p.ServiceType, type, StringComparison.OrdinalIgnoreCase)) return;
+        var wasSynology = _p.IsSynology;
+        _p.ServiceType = type;
+        if (_isNew && DefaultNames.Contains(_p.Name))
+            _p.Name = type switch { "nfs" => "NFS", "synology" => "Synology", _ => "WebDAV" };
+        if (_p.IsSynology)
         {
-            if (_p.IsNfs == value) return;
-            _p.ServiceType = value ? "nfs" : "webdav";
-            if (_isNew && (_p.Name == "WebDAV" || _p.Name == "NFS")) _p.Name = value ? "NFS" : "WebDAV";
-            if (value && _p.TimeoutSec > 60) _p.TimeoutSec = 30;
-            RaiseAll();
-            if (value && !string.IsNullOrWhiteSpace(_p.Host)) _ = RefreshExportsAsync(false);
+            _p.Anonymous = false;
+            if (_p.Port is 443 or 80 or 5005 or 5006) _p.Port = _p.Https ? 5001 : 5000;
+        }
+        else if (wasSynology && _p.Port is 5000 or 5001)
+        {
+            _p.Port = _p.Https ? 443 : 80;
+        }
+        if (_p.IsNfs && _p.TimeoutSec > 60) _p.TimeoutSec = 30;
+        RaiseAll();
+        if (_p.IsNfs && !string.IsNullOrWhiteSpace(_p.Host)) _ = RefreshExportsAsync(false);
+    }
+
+    public bool IsWebDav { get => !_p.IsNfs && !_p.IsSynology; set { if (value) SetService("webdav"); } }
+    public bool IsNfs { get => _p.IsNfs; set { if (value) SetService("nfs"); } }
+    public bool IsSynology { get => _p.IsSynology; set { if (value) SetService("synology"); } }
+    /// <summary>WebDAV and Synology share the HTTP(S) address, account and TLS fields.</summary>
+    public bool IsHttp => !_p.IsNfs;
+
+    // --- Synology shared folders ----------------------------------------
+
+    private string _sharesStatus = "";
+    private bool _listingShares;
+    public ObservableCollection<string> Shares { get; } = new();
+    public string SharesStatus { get => _sharesStatus; private set => Set(ref _sharesStatus, value); }
+
+    private async Task RefreshSharesAsync()
+    {
+        if (_listingShares) return;
+        _listingShares = true;
+        CommandManager.InvalidateRequerySuggested();
+        SharesStatus = Loc.T("Editor.SynoListing");
+        try
+        {
+            var r = await WithSynologyOtpAsync(() => AppServices.Drives.ListRootDirsAsync(_p.Clone(), EffectivePassword()));
+            Shares.Clear();
+            if (r["ok"]?.GetValue<bool>() == true && r["dirs"] is System.Text.Json.Nodes.JsonArray arr)
+            {
+                foreach (var d in arr)
+                    if (d?.GetValue<string>() is { Length: > 0 } name) Shares.Add(name);
+                SharesStatus = Shares.Count == 0 ? Loc.T("Editor.SynoNoShares") : "";
+            }
+            else
+            {
+                SharesStatus = Format.EngineError(r, "syno");
+                Log.Warn($"List shares on {_p.Host} failed: {r["errorCode"]} {r["errorMsg"]}");
+            }
+        }
+        catch (Exception ex)
+        {
+            SharesStatus = ex is UserFacingException ? ex.Message : Loc.T("Err.unknown", ex.Message);
+        }
+        finally
+        {
+            _listingShares = false;
+            CommandManager.InvalidateRequerySuggested();
         }
     }
 
-    public bool IsWebDav { get => !_p.IsNfs; set { if (value) IsNfs = false; } }
+    /// <summary>Runs op; if DSM asks for a 2-step verification code, prompts for it,
+    /// logs in to obtain a device token, and runs op again.</summary>
+    private async Task<System.Text.Json.Nodes.JsonObject> WithSynologyOtpAsync(Func<Task<System.Text.Json.Nodes.JsonObject>> op)
+    {
+        var r = await op();
+        string? error = null;
+        for (var i = 0; i < 3 && _p.IsSynology && r["errorCode"]?.GetValue<string>() is "syno_2fa" or "syno_2fa_bad"; i++)
+        {
+            var otp = Views.OtpPromptWindow.Ask($"{_p.Username}@{_p.Host}", error);
+            if (otp == null) return r;
+            var lr = await AppServices.Drives.SynologyLoginAsync(_p.Clone(), EffectivePassword(), otp);
+            if (lr["ok"]?.GetValue<bool>() != true)
+            {
+                Log.Warn($"Synology 2FA login on {_p.Host} failed: {lr["errorCode"]} {lr["errorMsg"]}");
+                error = Format.EngineError(lr, "syno");
+                continue;
+            }
+            r = await op();
+        }
+        return r;
+    }
 
     public string NfsExport
     {
@@ -176,6 +256,8 @@ public sealed class DriveEditorViewModel : ObservableObject
             _p.Https = value;
             if (value && _p.Port == 80) Port = 443;
             if (!value && _p.Port == 443) Port = 80;
+            if (value && _p.Port == 5000) Port = 5001;
+            if (!value && _p.Port == 5001) Port = 5000;
             OnPropertyChanged();
             OnPropertyChanged(nameof(Scheme));
             OnPropertyChanged(nameof(ShowHttpWarning));
@@ -207,6 +289,8 @@ public sealed class DriveEditorViewModel : ObservableObject
                 _p.Https = uri.Scheme == "https";
                 _p.Host = uri.Host;
                 _p.Port = uri.Port;
+                // DSM's own ports: this is a Synology, not WebDAV (5005/5006).
+                if (uri.Port is 5000 or 5001 && !_p.IsSynology) SetService("synology");
                 var path = Uri.UnescapeDataString(uri.AbsolutePath);
                 if (path.Length > 1) _p.BasePath = path.TrimEnd('/');
                 if (!string.IsNullOrEmpty(uri.UserInfo)) _p.Username = Uri.UnescapeDataString(uri.UserInfo.Split(':')[0]);
@@ -267,7 +351,7 @@ public sealed class DriveEditorViewModel : ObservableObject
     public bool UserMissing => NeedsCredentials && string.IsNullOrWhiteSpace(_p.Username);
     public bool PasswordMissing => NeedsCredentials && string.IsNullOrEmpty(_password) && !_hasStoredPassword;
 
-    private bool NeedsCredentials => !_p.IsNfs && !_p.Anonymous && !_p.PromptCredentials;
+    private bool NeedsCredentials => !_p.IsNfs && !(_p.Anonymous && !_p.IsSynology) && !_p.PromptCredentials;
 
     public bool IsValid
     {
@@ -295,7 +379,7 @@ public sealed class DriveEditorViewModel : ObservableObject
         TestResult = Loc.T("Editor.Testing");
         try
         {
-            var r = await AppServices.Drives.TestAsync(_p.Clone(), EffectivePassword());
+            var r = await WithSynologyOtpAsync(() => AppServices.Drives.TestAsync(_p.Clone(), EffectivePassword()));
             if (r["ok"]?.GetValue<bool>() == true)
             {
                 var ms = r["latencyMs"]?.GetValue<long>() ?? 0;
@@ -307,7 +391,8 @@ public sealed class DriveEditorViewModel : ObservableObject
             }
             else
             {
-                TestResult = Format.EngineError(r, _p.IsNfs);
+                TestResult = Format.EngineError(r, _p.IsNfs ? "nfs" : _p.IsSynology ? "syno" : null);
+                Log.Warn($"Test {_p.ServiceType} {_p.Host} failed: {r["errorCode"]} {r["errorMsg"]}");
             }
         }
         catch (Exception ex)
