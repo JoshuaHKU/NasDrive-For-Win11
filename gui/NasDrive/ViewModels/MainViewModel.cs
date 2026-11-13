@@ -9,8 +9,10 @@ using NasDrive.Services;
 
 namespace NasDrive.ViewModels;
 
+/// <summary>Pages of the main window.</summary>
 public enum Page { List, Editor, Settings }
 
+/// <summary>Main window: drive list, connect/disconnect and page navigation.</summary>
 public sealed class MainViewModel : ObservableObject
 {
     private Page _page = Page.List;

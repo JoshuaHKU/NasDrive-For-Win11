@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nasdrive/nasdrive/engine/nfsclient"
+	"github.com/JoshuaHKU/NasDrive-For-Win11/engine/nfsclient"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/config/configmap"
 	"github.com/rclone/rclone/fs/config/configstruct"
@@ -186,6 +186,7 @@ func parentOf(p string) string {
 // backs off exponentially only while retrying.
 type retryCalculator struct{}
 
+// Calculate returns the delay before the next call for the pacer.
 func (retryCalculator) Calculate(state pacer.State) time.Duration {
 	if state.ConsecutiveRetries == 0 {
 		return 0
@@ -319,6 +320,7 @@ func (f *Fs) withStaleRetry(op func() error) error {
 
 // --- fs.Info ---------------------------------------------------------------
 
+// fs.Info implementation: name, root, features and capabilities of the remote.
 func (f *Fs) Name() string             { return f.name }
 func (f *Fs) Root() string             { return f.root }
 func (f *Fs) Features() *fs.Features   { return f.features }
@@ -714,6 +716,7 @@ func (f *Fs) Shutdown(ctx context.Context) error {
 
 // --- Object ------------------------------------------------------------------
 
+// fs.ObjectInfo implementation: metadata cached from the last listing or lookup.
 func (o *Object) Fs() fs.Info    { return o.fs }
 func (o *Object) Remote() string { return o.remote }
 func (o *Object) String() string {

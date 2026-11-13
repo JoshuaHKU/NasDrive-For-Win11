@@ -6,20 +6,21 @@ using System.Threading.Tasks;
 
 namespace NasDrive.Services;
 
+/// <summary>Application version and release repository.</summary>
 public static class AppInfo
 {
     /// <summary>GitHub "owner/repo" whose releases are checked for updates.</summary>
-    // TODO: set to the real repository once it is published.
-    public const string UpdateRepo = "nasdrive/nasdrive";
+    public const string UpdateRepo = "JoshuaHKU/NasDrive-For-Win11";
 
     public static Version Version { get; } = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 1, 0);
 
     public static string VersionText => $"{Version.Major}.{Version.Minor}.{Version.Build}";
 }
 
+/// <summary>Result of an update check.</summary>
 public sealed record UpdateInfo(bool Available, string LatestVersion, string Url);
 
-/// <summary>Checks GitHub Releases for a newer version. Installing is left to the user (phase 1).</summary>
+/// <summary>Checks GitHub Releases for a newer version. Installing is left to the user.</summary>
 public static class UpdateService
 {
     public static async Task<UpdateInfo> CheckAsync()

@@ -36,12 +36,23 @@ param(
     [string] $ProfileId = "",
     [string] $Export = "",
     [string] $Credential = "NasDrive:test-nas",
-    [string] $Engine = (Join-Path $PSScriptRoot "nasdrive-engine.exe"),
+    [string] $Engine = "",
     [switch] $SkipTlsVerify,
     [switch] $NetworkMode = $true,
-    [switch] $KeepMounted
+    [switch] $KeepMounted,
+    [switch] $ReadOnlyTest,
+    [string[]] $RoExtraOptions = @(),
+    [switch] $RoPerms,
+    [string] $LogLevel = "INFO",
+    # How the read-only mount is made: "filesecurity" is what NasDrive does.
+    [ValidateSet("none", "filesecurity", "ro")] [string] $RoMode = "filesecurity"
 )
 $ErrorActionPreference = "Stop"
+switch ($RoMode) {
+    "filesecurity" { $RoExtraOptions = @("FileSecurity=D:P(A;;FRFX;;;WD)") }
+    "ro" { $RoExtraOptions = @("ro") }
+}
+if (-not $Engine) { $Engine = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "nasdrive-engine.exe" }
 
 Add-Type -TypeDefinition @"
 using System;
@@ -66,9 +77,12 @@ public static class NdCred {
 }
 "@
 
-function Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
-function Ok($msg) { Write-Host "    OK  $msg" -ForegroundColor Green }
-function Fail($msg) { Write-Host "    FAIL $msg" -ForegroundColor Red; $script:failed++ }
+$progress = Join-Path $env:TEMP "nasdrive-test-progress.log"
+Set-Content -Path $progress -Value "" -Encoding UTF8
+function Note($line) { Add-Content -Path $progress -Value ("{0:HH:mm:ss} {1}" -f (Get-Date), $line) -Encoding UTF8 }
+function Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan; Note "==> $msg" }
+function Ok($msg) { Write-Host "    OK  $msg" -ForegroundColor Green; Note "    OK  $msg" }
+function Fail($msg) { Write-Host "    FAIL $msg" -ForegroundColor Red; Note "    FAIL $msg"; $script:failed++ }
 $failed = 0
 
 $deviceId = $null
@@ -95,7 +109,7 @@ foreach ($v in "HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","http_proxy","https_proxy"
 $log = Join-Path $work "engine.log"
 $proc = Start-Process -FilePath $Engine -PassThru -WindowStyle Hidden -ArgumentList @(
     "engine", "--rc-addr", "127.0.0.1:$port", "--cache-dir", (Join-Path $work "cache"),
-    "--log-file", $log, "--log-level", "INFO")
+    "--log-file", $log, "--log-level", $LogLevel)
 $base = "http://127.0.0.1:$port/"
 $auth = @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("${rcUser}:${rcPass}")) }
 function Rc($method, $body = @{}, $timeout = 60) {
@@ -201,6 +215,54 @@ try {
     Remove-Item "$Drive\$name.renamed"
     Start-Sleep -Seconds 1
     if (-not (Test-Path "$Drive\$name.renamed")) { Ok "delete" } else { Fail "delete" }
+
+    if ($ReadOnlyTest) {
+        Step "Read-only mount: every change must be refused"
+        $roName = "nasdrive-ro-$([guid]::NewGuid().ToString('N').Substring(0,6)).txt"
+        Set-Content -Path "$Drive\$roName" -Value "original" -Encoding UTF8
+        do { Start-Sleep -Seconds 1; $dc = (Rc "nasdrive/mounts").mounts[0].diskCache } while (([int]$dc.uploadsInProgress + [int]$dc.uploadsQueued) -gt 0)
+        Rc "mount/unmount" @{ mountPoint = $Drive } | Out-Null; Start-Sleep -Seconds 2
+        Rc "mount/mount" @{
+            fs = $fs; mountPoint = $Drive; mountType = "cmount"
+            mountOpt = @{ VolumeName = $vol; NetworkMode = [bool]$NetworkMode; ExtraOptions = $RoExtraOptions }
+            vfsOpt = $(if ($RoPerms) { @{ CacheMode = "full"; DirCacheTime = "30s"; WriteBack = "5s"; ReadOnly = $true; FilePerms = 292; DirPerms = 365 } }
+                       else { @{ CacheMode = "full"; DirCacheTime = "30s"; WriteBack = "5s"; ReadOnly = $true } })
+        } 90 | Out-Null
+        Start-Sleep -Seconds 2
+        $f = "$Drive\$roName"
+        $ops = [ordered]@{
+            "create file"    = "Set-Content -Path '$Drive\ro-new.txt' -Value x -ErrorAction Stop"
+            "overwrite file" = "Set-Content -Path '$f' -Value changed -ErrorAction Stop"
+            "append file"    = "Add-Content -Path '$f' -Value more -ErrorAction Stop"
+            "rename file"    = "Rename-Item -Path '$f' -NewName '$roName.moved' -ErrorAction Stop"
+            "delete file"    = "Remove-Item -Path '$f' -ErrorAction Stop"
+            "make folder"    = "New-Item -ItemType Directory -Path '$Drive\ro-dir' -ErrorAction Stop | Out-Null"
+            ".NET delete"    = "[IO.File]::Delete('$f')"
+        }
+        foreach ($k in $ops.Keys) {
+            Note "    trying: $k"
+            # Run each attempt in a job with a timeout so a blocking call can't hang the test.
+            $job = Start-Job -ScriptBlock ([scriptblock]::Create($ops[$k]))
+            if (Wait-Job $job -Timeout 30) {
+                $r = Receive-Job $job -ErrorVariable jerr -ErrorAction SilentlyContinue
+                if ($job.State -eq "Failed" -or $jerr) { Ok "$k refused" } else { Fail "$k was allowed" }
+            } else { Fail "$k hung (>30 s)"; Stop-Job $job }
+            Remove-Job $job -Force
+        }
+        Start-Sleep -Seconds 1
+        $still = Test-Path "$Drive\$roName"
+        $content = if ($still) { (Get-Content "$Drive\$roName" -Raw).Trim() } else { "" }
+        if ($still -and $content -eq "original") { Ok "file unchanged on read-only drive" } else { Fail "file changed or gone (exists=$still content='$content')" }
+        Rc "mount/unmount" @{ mountPoint = $Drive } | Out-Null; Start-Sleep -Seconds 2
+        # verify on the server through a fresh read-write mount, then clean up
+        Rc "mount/mount" @{ fs = $fs; mountPoint = $Drive; mountType = "cmount"; mountOpt = @{ VolumeName = $vol; NetworkMode = [bool]$NetworkMode }; vfsOpt = @{ CacheMode = "full" } } 90 | Out-Null
+        Start-Sleep -Seconds 2
+        if ((Test-Path "$Drive\$roName") -and -not (Test-Path "$Drive\ro-new.txt") -and -not (Test-Path "$Drive\ro-dir")) { Ok "server unchanged" } else { Fail "server was modified" }
+        Remove-Item "$Drive\$roName" -ErrorAction SilentlyContinue
+        Remove-Item "$Drive\$roName.moved", "$Drive\ro-new.txt" -ErrorAction SilentlyContinue
+        Remove-Item "$Drive\ro-dir" -Recurse -ErrorAction SilentlyContinue
+        do { Start-Sleep -Seconds 1; $dc = (Rc "nasdrive/mounts").mounts[0].diskCache } while (([int]$dc.uploadsInProgress + [int]$dc.uploadsQueued) -gt 0)
+    }
 
     if (-not $KeepMounted) {
         Step "Unmounting"

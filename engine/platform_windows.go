@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"unsafe"
 
@@ -96,3 +97,6 @@ func fileVersion(path string) string {
 	}
 	return fmt.Sprintf("%d.%d.%d", info.FileVersionMS>>16, info.FileVersionMS&0xffff, info.FileVersionLS>>16)
 }
+
+// arch returns the CPU architecture, which selects the WinFsp DLL to check for.
+func arch() string { return runtime.GOARCH }

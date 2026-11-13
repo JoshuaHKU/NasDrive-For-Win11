@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 
 namespace NasDrive.Services;
 
+/// <summary>An error returned by the engine's rc API.</summary>
 public sealed class EngineException : Exception
 {
     public int Status { get; }

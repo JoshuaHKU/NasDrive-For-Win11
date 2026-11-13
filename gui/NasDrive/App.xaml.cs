@@ -11,6 +11,10 @@ using NasDrive.Views;
 
 namespace NasDrive;
 
+/// <summary>
+/// Application entry: single instance, never elevated, tray icon, engine
+/// supervisor and drive manager wiring.
+/// </summary>
 public partial class App : Application
 {
     private Mutex? _singleInstance;
@@ -60,7 +64,8 @@ public partial class App : Application
         {
             while (_activateEvent.WaitOne())
                 Dispatcher.BeginInvoke(ShowMainWindow);
-        }) { IsBackground = true, Name = "ActivateListener" }.Start();
+        })
+        { IsBackground = true, Name = "ActivateListener" }.Start();
 
         DispatcherUnhandledException += (_, args) =>
         {

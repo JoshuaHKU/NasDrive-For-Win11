@@ -9,6 +9,10 @@ using NasDrive.Services;
 
 namespace NasDrive.ViewModels;
 
+/// <summary>
+/// Add/edit page: WebDAV, NFS and Synology fields, validation, connection
+/// test (with Synology 2-step verification), share discovery and saving.
+/// </summary>
 public sealed class DriveEditorViewModel : ObservableObject
 {
     private readonly MainViewModel _main;
@@ -230,7 +234,6 @@ public sealed class DriveEditorViewModel : ObservableObject
     public string PasswordHint => _hasStoredPassword ? Loc.T("Editor.PassKeep") : Loc.T("Editor.Pass");
 
     public List<string> Letters { get; }
-    public List<string> Vendors { get; } = new() { "other", "nextcloud", "owncloud", "sharepoint", "fastmail" };
     public List<string> CacheModes { get; } = new() { "full", "writes", "minimal", "off" };
     public List<int> Timeouts { get; } = new() { 15, 30, 60, 100, 180, 300 };
 

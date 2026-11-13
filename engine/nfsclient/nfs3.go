@@ -77,6 +77,7 @@ var statNames = map[uint32]string{
 	10001: "NFS3ERR_BADHANDLE", 10004: "NFS3ERR_NOTSUPP", 10006: "NFS3ERR_SERVERFAULT", 10008: "NFS3ERR_JUKEBOX",
 }
 
+// Error returns the operation and the symbolic NFS status.
 func (e *Error) Error() string {
 	name := statNames[e.Status]
 	if name == "" {
@@ -115,6 +116,7 @@ type Attr struct {
 	Mtime  time.Time
 }
 
+// IsDir reports whether the attributes describe a directory.
 func (a *Attr) IsDir() bool { return a.Type == TypeDir }
 
 func decTime(d *dec) time.Time {
@@ -310,6 +312,7 @@ func dirop(e *enc, dir []byte, name string) {
 	e.str(name)
 }
 
+// GetAttr returns the attributes of fh.
 func (c *Conn) GetAttr(ctx context.Context, fh []byte) (Attr, error) {
 	var e enc
 	e.opaque(fh)
@@ -321,6 +324,7 @@ func (c *Conn) GetAttr(ctx context.Context, fh []byte) (Attr, error) {
 	return a, d.err
 }
 
+// SetAttr changes the selected attributes of fh.
 func (c *Conn) SetAttr(ctx context.Context, fh []byte, s SetAttrs) error {
 	var e enc
 	e.opaque(fh)
@@ -330,6 +334,7 @@ func (c *Conn) SetAttr(ctx context.Context, fh []byte, s SetAttrs) error {
 	return err
 }
 
+// Lookup resolves name in directory dir to a handle and its attributes.
 func (c *Conn) Lookup(ctx context.Context, dir []byte, name string) ([]byte, Attr, error) {
 	var e enc
 	dirop(&e, dir, name)
@@ -383,6 +388,7 @@ func (c *Conn) Write(ctx context.Context, fh []byte, off uint64, data []byte, st
 	return n, d.err
 }
 
+// Commit flushes data written with Unstable to stable storage.
 func (c *Conn) Commit(ctx context.Context, fh []byte) error {
 	var e enc
 	e.opaque(fh)
@@ -427,6 +433,7 @@ func (c *Conn) Create(ctx context.Context, dir []byte, name string, mode uint32,
 	return c.createLike(ctx, d, dir, name)
 }
 
+// Mkdir creates directory name in dir.
 func (c *Conn) Mkdir(ctx context.Context, dir []byte, name string, mode uint32) ([]byte, Attr, error) {
 	var e enc
 	dirop(&e, dir, name)
@@ -438,6 +445,7 @@ func (c *Conn) Mkdir(ctx context.Context, dir []byte, name string, mode uint32) 
 	return c.createLike(ctx, d, dir, name)
 }
 
+// Remove deletes file name from dir.
 func (c *Conn) Remove(ctx context.Context, dir []byte, name string) error {
 	var e enc
 	dirop(&e, dir, name)
@@ -445,6 +453,7 @@ func (c *Conn) Remove(ctx context.Context, dir []byte, name string) error {
 	return err
 }
 
+// Rmdir removes the empty directory name from dir.
 func (c *Conn) Rmdir(ctx context.Context, dir []byte, name string) error {
 	var e enc
 	dirop(&e, dir, name)
@@ -452,6 +461,7 @@ func (c *Conn) Rmdir(ctx context.Context, dir []byte, name string) error {
 	return err
 }
 
+// Rename atomically moves fromDir/fromName to toDir/toName, replacing any existing target.
 func (c *Conn) Rename(ctx context.Context, fromDir []byte, fromName string, toDir []byte, toName string) error {
 	var e enc
 	dirop(&e, fromDir, fromName)
@@ -505,6 +515,7 @@ func (c *Conn) ReadDirPlus(ctx context.Context, dir []byte) ([]DirEntry, error) 
 	return out, fmt.Errorf("nfs READDIRPLUS: too many pages")
 }
 
+// FSInfo returns the preferred and maximum transfer sizes.
 func (c *Conn) FSInfo(ctx context.Context, fh []byte) (FSInfo, error) {
 	var e enc
 	e.opaque(fh)
@@ -522,6 +533,7 @@ func (c *Conn) FSInfo(ctx context.Context, fh []byte) (FSInfo, error) {
 	return i, d.err
 }
 
+// FSStat returns the capacity of the file system holding fh.
 func (c *Conn) FSStat(ctx context.Context, fh []byte) (FSStat, error) {
 	var e enc
 	e.opaque(fh)

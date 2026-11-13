@@ -1,13 +1,11 @@
 using System;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
-using NasDrive.Models;
 using NasDrive.Services;
 using NasDrive.ViewModels;
 using Forms = System.Windows.Forms;
@@ -32,9 +30,6 @@ public sealed class TrayIcon : IDisposable
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-    [DllImport("user32.dll")]
-    private static extern bool DestroyIcon(IntPtr hIcon);
-
     public TrayIcon(MainViewModel vm, Action open, Action add, Action settings, Action checkUpdate, Action exit)
     {
         _vm = vm;
@@ -47,8 +42,14 @@ public sealed class TrayIcon : IDisposable
         // An invisible window that owns the menu so it closes when focus moves away.
         _anchor = new Window
         {
-            Width = 0, Height = 0, WindowStyle = WindowStyle.None, ShowInTaskbar = false,
-            ShowActivated = false, Left = -10000, Top = -10000, AllowsTransparency = true,
+            Width = 0,
+            Height = 0,
+            WindowStyle = WindowStyle.None,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            Left = -10000,
+            Top = -10000,
+            AllowsTransparency = true,
             Background = System.Windows.Media.Brushes.Transparent,
         };
         _anchor.Show();

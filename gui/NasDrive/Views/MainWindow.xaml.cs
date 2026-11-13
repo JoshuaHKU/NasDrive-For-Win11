@@ -4,6 +4,7 @@ using NasDrive.ViewModels;
 
 namespace NasDrive.Views;
 
+/// <summary>Borderless main window with the drive list and page host.</summary>
 public partial class MainWindow : Window
 {
     public MainWindow()

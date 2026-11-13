@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/nasdrive/nasdrive/engine/nfsclient"
+	"github.com/JoshuaHKU/NasDrive-For-Win11/engine/nfsclient"
 )
 
 // reader reads a file sequentially with up to inFlight READs prefetched.
@@ -81,6 +81,7 @@ func (r *reader) fetch(c *chunk, off, n int64) {
 	c.data = buf
 }
 
+// Read returns data from the prefetched chunks in order, waiting as needed.
 func (r *reader) Read(p []byte) (int, error) {
 	for len(r.cur) == 0 {
 		if r.err != nil {
@@ -116,6 +117,7 @@ func (r *reader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// Close cancels outstanding prefetch requests.
 func (r *reader) Close() error {
 	r.once.Do(r.cancel)
 	return nil

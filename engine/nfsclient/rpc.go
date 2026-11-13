@@ -31,6 +31,7 @@ const (
 // failing with it may be retried on a new connection if idempotent.
 type ErrConnection struct{ Err error }
 
+// Error and Unwrap make ErrConnection a wrapping error.
 func (e *ErrConnection) Error() string { return "nfs: connection: " + e.Err.Error() }
 func (e *ErrConnection) Unwrap() error { return e.Err }
 
@@ -40,6 +41,7 @@ type RPCError struct {
 	Msg              string
 }
 
+// Error describes the rejected call.
 func (e *RPCError) Error() string {
 	return fmt.Sprintf("rpc prog %d v%d proc %d: %s", e.Prog, e.Vers, e.Proc, e.Msg)
 }

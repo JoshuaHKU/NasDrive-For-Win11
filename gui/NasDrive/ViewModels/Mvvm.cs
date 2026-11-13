@@ -7,6 +7,7 @@ using System.Windows.Input;
 
 namespace NasDrive.ViewModels;
 
+/// <summary>Base class implementing INotifyPropertyChanged.</summary>
 public abstract class ObservableObject : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -26,6 +27,7 @@ public abstract class ObservableObject : INotifyPropertyChanged
     }
 }
 
+/// <summary>ICommand backed by delegates.</summary>
 public sealed class RelayCommand : ICommand
 {
     private readonly Action<object?> _execute;

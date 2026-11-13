@@ -1,10 +1,10 @@
 ﻿; Inno Setup script for NasDrive. Build on Windows with Inno Setup 6:
-;   iscc /DArch=x64 /DVersion=0.3.0 installer\NasDrive.iss
+;   iscc /DArch=x64 /DVersion=0.3.1 installer\NasDrive.iss
 ; Expects dist\win-x64\ (from scripts/build.sh) and installer\deps\winfsp.msi
 ; (download the latest release from https://github.com/winfsp/winfsp/releases).
 
 #ifndef Version
-  #define Version "0.3.0"
+  #define Version "0.3.1"
 #endif
 #ifndef Arch
   #define Arch "x64"
@@ -15,7 +15,7 @@ AppId={{6B4C9F0E-7E6B-4B7A-9A1E-4E1D5C2B8A10}
 AppName=NasDrive
 AppVersion={#Version}
 AppPublisher=NasDrive contributors
-AppPublisherURL=https://github.com/nasdrive/nasdrive
+AppPublisherURL=https://github.com/JoshuaHKU/NasDrive-For-Win11
 DefaultDirName={autopf}\NasDrive
 DefaultGroupName=NasDrive
 DisableProgramGroupPage=yes

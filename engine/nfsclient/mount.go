@@ -36,6 +36,7 @@ var mountStatNames = map[uint32]string{
 	10004: "MNT3ERR_NOTSUPP", 10006: "MNT3ERR_SERVERFAULT",
 }
 
+// Error describes the failure, with a hint for permission errors.
 func (e *MountError) Error() string {
 	name := mountStatNames[e.Status]
 	if name == "" {

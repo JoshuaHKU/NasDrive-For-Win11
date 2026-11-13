@@ -63,6 +63,7 @@ public sealed class DriveProfile
     }
 }
 
+/// <summary>Per-drive cache and capacity options.</summary>
 public sealed class AdvancedOptions
 {
     /// <summary>off, minimal, writes, full</summary>

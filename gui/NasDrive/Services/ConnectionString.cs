@@ -12,8 +12,10 @@ namespace NasDrive.Services;
 /// </summary>
 public static class ConnectionString
 {
+    /// <param name="p">The drive profile.</param>
     /// <param name="obscuredPass">Password already obscured with core/obscure, or null.</param>
     /// <param name="proxyUrl">Global proxy URL applied when the drive uses a proxy.</param>
+    /// <param name="obscuredDeviceId">Synology 2-step verification device token (obscured), or null.</param>
     public static string Build(DriveProfile p, string? obscuredPass, string? proxyUrl, string? obscuredDeviceId = null)
     {
         if (p.IsNfs) return BuildNfs(p);

@@ -7,6 +7,7 @@ using NasDrive.Models;
 
 namespace NasDrive.Services;
 
+/// <summary>Atomic JSON load/save helpers.</summary>
 public static class JsonStore
 {
     public static readonly JsonSerializerOptions Options = new()
@@ -39,12 +40,14 @@ public static class JsonStore
     }
 }
 
+/// <summary>On-disk format of profiles.json.</summary>
 public sealed class ProfilesFile
 {
     public int SchemaVersion { get; set; } = 1;
     public List<DriveProfile> Drives { get; set; } = new();
 }
 
+/// <summary>The saved drive profiles (no passwords; those are in Credential Manager).</summary>
 public sealed class ProfileStore
 {
     private readonly object _gate = new();
@@ -98,6 +101,7 @@ public sealed class ProfileStore
     }
 }
 
+/// <summary>Loads and saves <see cref="AppSettings"/>.</summary>
 public sealed class SettingsStore
 {
     public AppSettings Current { get; private set; }

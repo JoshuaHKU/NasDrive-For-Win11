@@ -226,6 +226,7 @@ func (f *Fs) call(ctx context.Context, api string, version int, method string, p
 
 // --- fs.Info --------------------------------------------------------------
 
+// fs.Info implementation: name, root, features and capabilities of the remote.
 func (f *Fs) Name() string             { return f.name }
 func (f *Fs) Root() string             { return f.root }
 func (f *Fs) Features() *fs.Features   { return f.features }
@@ -635,6 +636,7 @@ func (f *Fs) Shutdown(ctx context.Context) error {
 
 // --- Object -------------------------------------------------------------------
 
+// fs.ObjectInfo implementation: metadata cached from the last listing or lookup.
 func (o *Object) Fs() fs.Info                           { return o.fs }
 func (o *Object) Remote() string                        { return o.remote }
 func (o *Object) Size() int64                           { return o.size }

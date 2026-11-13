@@ -1,5 +1,6 @@
 namespace NasDrive.Models;
 
+/// <summary>User settings stored in %APPDATA%\NasDrive\settings.json.</summary>
 public sealed class AppSettings
 {
     public int SchemaVersion { get; set; } = 1;

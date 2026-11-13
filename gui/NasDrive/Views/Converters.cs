@@ -21,6 +21,7 @@ public sealed class TExtension : MarkupExtension
         new Binding($"[{Key}]") { Source = Loc.Instance, Mode = BindingMode.OneWay }.ProvideValue(serviceProvider);
 }
 
+/// <summary>true → Visible, false → Collapsed.</summary>
 public sealed class BoolToVisibilityConverter : IValueConverter
 {
     public bool Invert { get; set; }
@@ -36,6 +37,7 @@ public sealed class BoolToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>Maps a boolean to an opacity (by default true dims to 0.45, false is fully opaque).</summary>
 public sealed class BoolToOpacityConverter : IValueConverter
 {
     public double TrueOpacity { get; set; } = 0.45;
@@ -48,6 +50,7 @@ public sealed class BoolToOpacityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>Negates a boolean.</summary>
 public sealed class InverseBoolConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value is not true;

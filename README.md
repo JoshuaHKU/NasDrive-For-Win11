@@ -1,77 +1,97 @@
-# NasDrive
+# NasDrive for Windows 11
 
-把 NAS 上的 WebDAV 或 NFS 目录映射为 Windows 本地盘符的开源工具（对标 RaiDrive）。
-基于 [rclone](https://github.com/rclone/rclone)（作为 Go 库引用，未修改源码）和 [WinFsp](https://winfsp.dev)。
+**把 NAS 上的文件夹映射成 Windows 盘符的开源工具** —— 支持 **WebDAV**、**NFS** 与 **群晖 Synology（DSM File Station）** 三种连接方式，带图形界面和托盘图标，开箱即用。
 
-> 状态：v0.3.0，支持 WebDAV、NFSv3 与群晖 DSM。设计见 `docs/NasDrive详细设计文档.md`、`docs/NFS支持设计.md`。
+> English: NasDrive maps folders on your NAS to Windows drive letters over WebDAV, NFSv3 or the Synology DSM File Station API (with 2-step verification support). It is a free, open-source (MIT) alternative to tools like RaiDrive, built on [rclone](https://rclone.org) and [WinFsp](https://winfsp.dev). See [docs/安装与使用说明.md](docs/安装与使用说明.md) for installation and [docs/系统介绍.md](docs/系统介绍.md) for the architecture.
 
-## 组成
+![license](https://img.shields.io/badge/license-MIT-blue) ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 
-```
-engine/        nasdrive-engine.exe（Go）：rclone WebDAV + cmount(WinFsp) + rc 控制接口
-  main.go          入口，默认运行 engine 子命令
-  engine_cmd.go    engine 子命令：启动 rc 服务，输出 NASDRIVE_READY 握手行
-  rc_nasdrive.go   自定义接口 nasdrive/version|health|test|mounts|probe|nfsexports；禁用 core/command
-  backend/nfs/     rclone nfs 存储后端（rclone 本身只有 NFS 服务端，没有客户端）
-  nfsclient/       NFSv3 + MOUNT + portmapper 客户端（纯 Go，可用特权源端口）
-  platform_*.go    WinFsp 检测、磁盘空间
-gui/NasDrive/  NasDrive.exe（C# .NET 8 WPF）：托盘、主窗口、添加/编辑、设置
-  Services/        引擎守护、rc 客户端、驱动器状态机、凭据管理器、注册表/外壳集成、多语言
-  ViewModels/      MVVM
-  Views/           XAML 界面与托盘
-installer/     Inno Setup 安装脚本（含 WinFsp 静默安装）
-scripts/       build.sh 构建脚本、test-mount.ps1 Windows 端到端测试、genicon 图标生成
-```
+## 功能
 
-## 构建
+| | WebDAV | NFS | 群晖 Synology |
+|---|---|---|---|
+| 适用 | 任何 WebDAV 服务（群晖/威联通/华硕 NAS、Nextcloud 等） | 开启 NFS 的 NAS / Linux 服务器 | 群晖 DSM 6.2 / 7.x |
+| 认证 | 用户名 + 密码 | 按 IP 授权（AUTH_SYS） | DSM 账户，**支持两步验证** |
+| NAS 端需要 | 开启 WebDAV | 开启 NFS 并配置共享权限 | 无需额外设置 |
+| 列出共享 | — | ✓（showmount） | ✓ |
+| 真实容量显示 | 取决于服务器 | ✓ | ✓ |
 
-需要 Go 1.26+ 与 .NET 8 SDK（macOS/Linux 可交叉编译，WPF 程序只能在 Windows 运行）。
+通用能力：
+
+- 盘符以**网络驱动器**形式出现在"此电脑"，名称显示为 `名称 (X:)` 与可用/总空间；
+- 本地读写缓存（VFS full cache）+ 延迟写回，大文件、Office 文档可直接打开编辑；
+- 开机自动连接、断线检测与自动重连、上传队列提示，断开前确认未上传完的文件；
+- **只读**驱动器（Windows 层面拒绝写入和删除）；
+- 全局 HTTP 代理，可按驱动器启用；
+- 密码与设备令牌只保存在 **Windows 凭据管理器**，不写入任何文件；
+- 中文 / English 界面，深色主题，按屏幕缩放清晰显示的托盘图标（蓝 = 已连接，灰 = 未连接，琥珀 = 离线）。
+
+## 下载与安装
+
+到 [Releases](https://github.com/JoshuaHKU/NasDrive-For-Win11/releases) 下载最新的 `NasDrive-x.y.z-x64-setup.exe`，双击安装。安装程序会在需要时自动安装 [WinFsp](https://winfsp.dev)（文件系统驱动）。
+
+详细步骤、各协议的 NAS 端设置与常见问题见 **[安装与使用说明](docs/安装与使用说明.md)**。
+
+## 快速开始
+
+1. 安装后从开始菜单启动 NasDrive（托盘会出现图标）；
+2. 点击 **添加**，选择服务类型：
+   - **群晖 Synology**：填 NAS 地址、端口 5001（HTTPS）、DSM 账户密码 → **列出共享** → 选择共享文件夹；
+   - **WebDAV**：填地址、端口（群晖 WebDAV 默认 5006）、账户密码、路径；
+   - **NFS**：填 NAS 地址 → **列出共享** → 选择导出路径；
+3. 点击 **连接**，盘符随即出现在资源管理器中。
+
+## 从源码构建
+
+需要 Go 1.26+ 与 .NET 8 SDK。引擎可在 macOS/Linux 上交叉编译；WPF 界面也可在 macOS/Linux 上编译，但只能在 Windows 上运行。
 
 ```bash
-scripts/build.sh                # 输出 dist/win-x64/
+scripts/build.sh                # 输出 dist/win-x64/（nasdrive-engine.exe + NasDrive.exe）
 ARCH=arm64 scripts/build.sh     # Windows on ARM
 ```
 
-安装包（在 Windows 上，需 Inno Setup 6；先把 WinFsp 安装包放到 `installer/deps/winfsp.msi`）：
+安装包（Windows，需 Inno Setup 6；先把 WinFsp 安装包放到 `installer/deps/winfsp.msi`）：
 
 ```bat
-iscc /DArch=x64 /DVersion=0.3.0 installer\NasDrive.iss
+iscc /DArch=x64 /DVersion=0.3.1 installer\NasDrive.iss
 ```
 
-## 测试
+测试：
 
-引擎端到端测试（Windows，已安装 WinFsp）。NAS 密码只保存在 Windows 凭据管理器中，脚本从中读取：
-
-```bat
-cmdkey /generic:NasDrive:test-nas /user:NAS用户名 /pass
-powershell -ExecutionPolicy Bypass -File test-mount.ps1 -Url https://nas:5006 -RemotePath /folder -Drive T: -SkipTlsVerify
+```bash
+cd engine && go test ./...      # 含 rclone 官方后端一致性测试（NFS 对 rclone serve nfs，群晖对内置模拟 DSM）
 ```
 
-## NFS 使用说明（以群晖为例）
+Windows 端到端测试（挂载、读写、只读、容量等）见 `scripts/test-mount.ps1` 头部说明。
 
-1. 控制面板 → 文件服务 → NFS：勾选“启用 NFS 服务”。
-2. 控制面板 → 共享文件夹 → 选中共享 → 编辑 → NFS 权限 → 新增：主机填本机 IP 或网段（如 `192.168.1.0/24`），权限“可读写”，Squash 选“映射所有用户为 admin”，安全性 `sys`。
-3. NasDrive → 添加 → 服务类型选 NFS → 填 NAS 地址 → 点“列出共享”选择共享（如 `/volume1/share`）→ 可填子目录 → 连接。
+## 项目结构
 
-NFS 没有密码、按 IP 授权且不加密，只建议在可信局域网使用。NasDrive 默认从 <1024 的特权端口连接，所以无需勾选群晖的“允许来自非特权端口的连接”。
+```
+engine/                      nasdrive-engine.exe（Go，内嵌 rclone 作为库）
+  main.go, engine_cmd.go       入口与 engine 子命令（rc 控制接口 + 就绪握手）
+  rc_nasdrive.go               NasDrive 专用 rc 接口：version/health/test/mounts/probe/
+                               nfsexports/synologin/listdirs，错误分类
+  backend/nfs/                 rclone "nfs" 后端（rclone 本身没有 NFS 客户端）
+  backend/synology/            rclone "synology" 后端（DSM File Station API，含 2FA）
+  nfsclient/                   纯 Go NFSv3 + MOUNT + portmapper 客户端
+  platform_*.go                WinFsp 检测、磁盘空间
+gui/NasDrive/                NasDrive.exe（C# .NET 8 WPF）
+  Services/                    引擎守护、rc 客户端、驱动器状态机、凭据管理器、外壳集成、多语言
+  ViewModels/, Views/          MVVM 界面、托盘
+installer/                   Inno Setup 安装脚本（含 WinFsp 静默安装）
+scripts/                     build.sh、test-mount.ps1、genicon（图标生成）
+docs/                        系统介绍、安装说明、各期设计文档
+```
 
-## 关键设计
+## 文档
 
-- **无 rclone.conf**：挂载时用即时连接字符串 `:webdav,url=...,pass=<obscured>:/path`；密码存于 Windows 凭据管理器（`NasDrive:drive:<id>`）。
-- **每驱动器覆盖项**：超时、忽略证书、代理通过 rclone `override.*` 传入，互不影响。
-- **双进程**：GUI 关闭或崩溃不影响已挂载盘符；GUI 重启后通过 `engine.ready.json` + 凭据重新接管引擎；引擎崩溃时自动重启并重连。
-- **不提权运行**（`asInvoker`），否则资源管理器看不到盘符。
-- 引擎启动时清除 `HTTP(S)_PROXY` 环境变量，避免局域网 NAS 流量被系统代理劫持。
-
-## 数据位置
-
-| 内容 | 路径 |
-|---|---|
-| 驱动器配置 / 设置 | `%APPDATA%\NasDrive\profiles.json`、`settings.json` |
-| 缓存 | `%LOCALAPPDATA%\NasDrive\Cache`（可在设置中修改） |
-| 日志 | `%LOCALAPPDATA%\NasDrive\Logs\gui-*.log`、`engine.log` |
-| 密码 | Windows 凭据管理器，目标名 `NasDrive:*` |
+- [安装与使用说明](docs/安装与使用说明.md)
+- [系统介绍（架构与原理）](docs/系统介绍.md)
+- 设计文档：[一期（WebDAV）](docs/NasDrive详细设计文档.md)、[NFS 支持](docs/NFS支持设计.md)、[群晖与托盘图标](docs/群晖支持与托盘图标设计.md)
+- [更新日志](CHANGELOG.md)
 
 ## 许可证
 
-MIT。第三方组件见 `THIRD-PARTY-NOTICES.md`。
+[MIT](LICENSE)。NasDrive 以库的形式使用 rclone（MIT），通过 WinFsp（GPLv3 + FLOSS 例外）挂载；第三方组件见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+
+NasDrive 与 Synology、RaiDrive 等公司或产品无关；"Synology"、"群晖"、"DSM" 是 Synology Inc. 的商标。

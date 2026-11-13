@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nasdrive/nasdrive/engine/backend/synology"
-	"github.com/nasdrive/nasdrive/engine/nfsclient"
+	"github.com/JoshuaHKU/NasDrive-For-Win11/engine/backend/synology"
+	"github.com/JoshuaHKU/NasDrive-For-Win11/engine/nfsclient"
 	"github.com/rclone/rclone/backend/webdav/api"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/cache"

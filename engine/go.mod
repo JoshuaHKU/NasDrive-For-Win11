@@ -1,4 +1,4 @@
-module github.com/nasdrive/nasdrive/engine
+module github.com/JoshuaHKU/NasDrive-For-Win11/engine
 
 go 1.26.0
 

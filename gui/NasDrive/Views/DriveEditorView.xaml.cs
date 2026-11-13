@@ -4,6 +4,7 @@ using NasDrive.ViewModels;
 
 namespace NasDrive.Views;
 
+/// <summary>Add/edit drive page (the PasswordBox is bridged in code behind).</summary>
 public partial class DriveEditorView : UserControl
 {
     public DriveEditorView()

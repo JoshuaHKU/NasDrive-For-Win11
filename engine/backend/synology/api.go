@@ -55,6 +55,7 @@ var fileErrors = map[int]string{
 	1802: "no file name", 1803: "upload cancelled", 1804: "file too large for FAT", 1805: "file exists",
 }
 
+// Error describes the DSM error code in words.
 func (e *Error) Error() string {
 	msg := commonErrors[e.Code]
 	if msg == "" {

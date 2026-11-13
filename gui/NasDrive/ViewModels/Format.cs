@@ -3,6 +3,7 @@ using NasDrive.Services;
 
 namespace NasDrive.ViewModels;
 
+/// <summary>Formatting of sizes and engine errors for display.</summary>
 public static class Format
 {
     public static string Bytes(long? b)
@@ -18,6 +19,8 @@ public static class Format
     /// <summary>Turns a nasdrive/test or nasdrive/probe result into a localized message.</summary>
     public static string EngineError(JsonObject r, bool nfs = false) => EngineError(r, nfs ? "nfs" : null);
 
+    /// <summary>Turns an engine error result into a localized message.</summary>
+    /// <param name="r">Engine result with errorCode/errorMsg/httpStatus.</param>
     /// <param name="proto">"nfs" or "syno" for protocol specific wording, or null.</param>
     public static string EngineError(JsonObject r, string? proto)
     {

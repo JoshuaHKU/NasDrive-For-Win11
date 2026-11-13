@@ -9,8 +9,10 @@ using NasDrive.Services;
 
 namespace NasDrive.ViewModels;
 
+/// <summary>A value/label pair for combo boxes.</summary>
 public sealed record Choice(string Value, string Label);
 
+/// <summary>Settings page: general options, cache, proxy, language and about.</summary>
 public sealed class SettingsViewModel : ObservableObject
 {
     private readonly MainViewModel _main;

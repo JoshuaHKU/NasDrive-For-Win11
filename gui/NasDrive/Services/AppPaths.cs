@@ -3,6 +3,7 @@ using System.IO;
 
 namespace NasDrive.Services;
 
+/// <summary>Locations of settings, logs, cache and the engine executable.</summary>
 public static class AppPaths
 {
     public static string RoamingDir { get; } = Ensure(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NasDrive"));

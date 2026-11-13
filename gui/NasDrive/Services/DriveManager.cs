@@ -26,6 +26,7 @@ public sealed class DriveRuntime
     public bool WantConnected { get; internal set; }
 }
 
+/// <summary>Outcome of a disconnect request.</summary>
 public enum DisconnectResult { Done, PendingUploads, Failed }
 
 /// <summary>Connects and disconnects drives and keeps their runtime state current.</summary>
@@ -58,6 +59,9 @@ public sealed class DriveManager : IDisposable
     }
 
     public DriveRuntime Get(string id) => _runtime.GetOrAdd(id, _ => new DriveRuntime());
+
+    /// <summary>SDDL for read-only drives: Everyone may read and execute; nothing else.</summary>
+    public const string ReadOnlyFileSecurity = "FileSecurity=D:P(A;;FRFX;;;WD)";
 
     private EngineClient Engine => _engine.Client ?? throw new InvalidOperationException(Loc.T("Err.EngineNotRunning"));
 
@@ -129,6 +133,16 @@ public sealed class DriveManager : IDisposable
                 ["VolumeName"] = p.NetworkMode ? volName : p.Name,
                 ["NetworkMode"] = p.NetworkMode,
             };
+            if (p.ReadOnly)
+            {
+                // The VFS refuses writes on a read-only drive, but Windows deletes a
+                // file by marking it "delete on close" and ignores errors at close,
+                // so Explorer would show deletions that never happen. Give every
+                // file a read/execute-only security descriptor so Windows itself
+                // refuses delete (and write) access when the file is opened.
+                // rclone adds the "-o" in front of each extra option.
+                mountOpt["ExtraOptions"] = new[] { ReadOnlyFileSecurity };
+            }
             var vfsOpt = new Dictionary<string, object>
             {
                 ["CacheMode"] = p.Advanced.CacheMode,

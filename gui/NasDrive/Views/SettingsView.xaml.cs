@@ -4,6 +4,7 @@ using NasDrive.ViewModels;
 
 namespace NasDrive.Views;
 
+/// <summary>Settings page view.</summary>
 public partial class SettingsView : UserControl
 {
     public SettingsView()
