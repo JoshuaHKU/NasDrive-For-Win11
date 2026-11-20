@@ -85,6 +85,18 @@
                                 <TextBlock Text="{v:T Editor.Synology}" />
                             </StackPanel>
                         </RadioButton>
+                        <RadioButton Style="{StaticResource SegmentRadio}" GroupName="proto" IsChecked="{Binding IsSftp}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE72E;" Style="{StaticResource Icon}" Margin="0,0,6,0" />
+                                <TextBlock Text="SFTP" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Style="{StaticResource SegmentRadio}" GroupName="proto" IsChecked="{Binding IsFtp}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8B7;" Style="{StaticResource Icon}" Margin="0,0,6,0" />
+                                <TextBlock Text="FTP" />
+                            </StackPanel>
+                        </RadioButton>
                     </WrapPanel>
                 </Border>
 
@@ -109,10 +121,11 @@
                 <!-- Options -->
                 <UniformGrid Grid.Row="3" Grid.Column="1" Columns="2" Margin="0,0,0,10">
                     <CheckBox IsChecked="{Binding AutoConnect}" Content="{v:T Editor.AutoConnect}" />
-                    <CheckBox IsChecked="{Binding UseProxy}" Content="{v:T Editor.Proxy}" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
+                    <CheckBox IsChecked="{Binding UseProxy}" Content="{v:T Editor.Proxy}" Visibility="{Binding IsWeb, Converter={StaticResource BoolToVis}}" />
                     <CheckBox IsChecked="{Binding PromptCredentials}" Content="{v:T Editor.PromptCred}" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
                     <CheckBox IsChecked="{Binding ReadOnly}" Content="{v:T Editor.ReadOnly}" />
                     <CheckBox IsChecked="{Binding LocalDisk}" Content="{v:T Editor.LocalDisk}" />
+                    <CheckBox IsChecked="{Binding IsNextcloud}" Content="{v:T Editor.Nextcloud}" ToolTip="{v:T Editor.NextcloudHint}" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
                 </UniformGrid>
 
                 <!-- Address -->
@@ -125,7 +138,7 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="70" />
                     </Grid.ColumnDefinitions>
-                    <CheckBox IsChecked="{Binding Https}" Content="HTTPS" Margin="0,0,8,0" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
+                    <CheckBox IsChecked="{Binding Https}" Content="HTTPS" Margin="0,0,8,0" Visibility="{Binding IsWeb, Converter={StaticResource BoolToVis}}" />
                     <TextBlock Grid.Column="1" Text="{Binding Scheme}" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource DimTextBrush}" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
                     <TextBlock Grid.Column="1" Text="nfs://" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource DimTextBrush}" Visibility="{Binding IsNfs, Converter={StaticResource BoolToVis}}" />
                     <Grid Grid.Column="2">
@@ -240,8 +253,27 @@
                             <Border BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1" IsHitTestVisible="False"
                                     Visibility="{Binding PasswordMissing, Converter={StaticResource BoolToVis}}" />
                         </Grid>
-                        <CheckBox Grid.Column="3" IsChecked="{Binding Anonymous}" Content="{v:T Editor.Anonymous}" Margin="10,0,0,0" Visibility="{Binding IsWebDav, Converter={StaticResource BoolToVis}}" />
+                        <CheckBox Grid.Column="3" IsChecked="{Binding Anonymous}" Content="{v:T Editor.Anonymous}" Margin="10,0,0,0" Visibility="{Binding ShowAnonymous, Converter={StaticResource BoolToVis}}" />
                     </Grid>
+                    <StackPanel Margin="0,8,0,0" Visibility="{Binding IsSftp, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton GroupName="sshauth" IsChecked="{Binding SshUsePassword}" Content="{v:T Editor.SshAuthPassword}" Foreground="{StaticResource TextBrush}" Margin="0,0,16,0" />
+                            <RadioButton GroupName="sshauth" IsChecked="{Binding SshUseKey}" Content="{v:T Editor.SshAuthKey}" Foreground="{StaticResource TextBrush}" />
+                        </StackPanel>
+                        <Grid Margin="0,6,0,0" Visibility="{Binding SshUseKey, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid>
+                                <TextBox x:Name="KeyFileBox" Text="{Binding SshKeyFile, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Text="{v:T Editor.SshKeyFileHint}" Style="{StaticResource Dim}" Margin="7,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                           Visibility="{Binding Text.IsEmpty, ElementName=KeyFileBox, Converter={StaticResource BoolToVis}}" />
+                                <Border BorderBrush="{StaticResource ErrorBrush}" BorderThickness="1" IsHitTestVisible="False" Visibility="{Binding KeyFileMissing, Converter={StaticResource BoolToVis}}" />
+                            </Grid>
+                            <Button Grid.Column="1" Style="{StaticResource DialogButton}" Margin="8,0,0,0" Command="{Binding BrowseKeyCommand}" Content="{v:T Editor.Browse}" />
+                        </Grid>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- NFS identity -->
@@ -257,7 +289,7 @@
                 </StackPanel>
 
                 <!-- TLS and timeout -->
-                <TextBlock Grid.Row="7" Text="{v:T Editor.Security}" Style="{StaticResource FieldLabel}" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Grid.Row="7" Text="{v:T Editor.Security}" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,6,10,0" Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}" />
                 <TextBlock Grid.Row="7" Text="{v:T Editor.NfsSecurity}" Style="{StaticResource FieldLabel}" Visibility="{Binding IsNfs, Converter={StaticResource BoolToVis}}" />
                 <Grid Grid.Row="7" Grid.Column="1" Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>
@@ -267,9 +299,18 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Visibility="{Binding IsHttp, Converter={StaticResource BoolToVis}}">
-                        <CheckBox IsChecked="{Binding SkipTlsVerify}" Content="{v:T Editor.SkipTls}" IsEnabled="{Binding Https}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6" Visibility="{Binding IsFtp, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{v:T Editor.FtpEncryption}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <ComboBox Width="220" ItemsSource="{Binding FtpEncryptions}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding FtpEncryption}" />
+                        </StackPanel>
+                        <CheckBox IsChecked="{Binding SkipTlsVerify}" Content="{v:T Editor.SkipTls}" Visibility="{Binding ShowTlsOptions, Converter={StaticResource BoolToVis}}" />
                         <TextBlock Text="{v:T Editor.HttpWarning}" Foreground="{StaticResource WarningBrush}" FontSize="11"
                                    Visibility="{Binding ShowHttpWarning, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="{v:T Editor.FtpWarning}" Foreground="{StaticResource WarningBrush}" FontSize="11" TextWrapping="Wrap" Visibility="{Binding ShowFtpWarning, Converter={StaticResource BoolToVis}}" />
+                        <StackPanel Visibility="{Binding IsSftp, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding HostKeyText}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="11" />
+                            <Button HorizontalAlignment="Left" Style="{StaticResource TitleButton}" Padding="0,2" Command="{Binding ForgetHostKeyCommand}" Content="{v:T Editor.SshForgetHostKey}" />
+                        </StackPanel>
                     </StackPanel>
                     <StackPanel Visibility="{Binding IsNfs, Converter={StaticResource BoolToVis}}">
                         <CheckBox IsChecked="{Binding NfsPrivilegedPort}" Content="{v:T Editor.NfsPrivPort}" />

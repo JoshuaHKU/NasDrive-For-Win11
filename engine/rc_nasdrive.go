@@ -166,6 +166,30 @@ func getTimeout(in rc.Params, def time.Duration) time.Duration {
 	return def
 }
 
+// withHardTimeout runs fn but returns a timeout result when ctx expires even if
+// fn is stuck: some backends block on network reads without a deadline (e.g.
+// an FTP client waiting for the greeting of an implicit-TLS server), and a
+// connection test must always come back. A stuck fn is abandoned.
+func withHardTimeout(ctx context.Context, fn func(context.Context) (rc.Params, error)) (rc.Params, error) {
+	type result struct {
+		out rc.Params
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		out, err := fn(ctx)
+		ch <- result{out, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.out, r.err
+	case <-ctx.Done():
+		out := rc.Params{"ok": false}
+		fillError(out, fmt.Errorf("no response from the server in time: %w", context.DeadlineExceeded))
+		return out, nil
+	}
+}
+
 func rcTest(ctx context.Context, in rc.Params) (rc.Params, error) {
 	fsString, err := in.GetString("fs")
 	if err != nil {
@@ -174,7 +198,10 @@ func rcTest(ctx context.Context, in rc.Params) (rc.Params, error) {
 	timeout := getTimeout(in, 20*time.Second)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	return withHardTimeout(ctx, func(ctx context.Context) (rc.Params, error) { return testFs(ctx, fsString) })
+}
 
+func testFs(ctx context.Context, fsString string) (rc.Params, error) {
 	out := rc.Params{"ok": false}
 	start := time.Now()
 	// Use a fresh Fs, not the cache, so that changed settings are honoured.
@@ -322,6 +349,9 @@ func classifyError(err error) (code, msg string, httpStatus int) {
 			return "method_not_allowed", msg, httpStatus
 		}
 		return "http", msg, httpStatus
+	}
+	if code, ok := classifySSHFTPError(err); ok {
+		return code, msg, 0
 	}
 	if code, ok := classifySynoError(err); ok {
 		return code, msg, 0
@@ -509,6 +539,10 @@ func rcListDirs(ctx context.Context, in rc.Params) (rc.Params, error) {
 	dir, _ := in.GetString("dir")
 	ctx, cancel := context.WithTimeout(ctx, getTimeout(in, 20*time.Second))
 	defer cancel()
+	return withHardTimeout(ctx, func(ctx context.Context) (rc.Params, error) { return listDirs(ctx, fsString, dir) })
+}
+
+func listDirs(ctx context.Context, fsString, dir string) (rc.Params, error) {
 	out := rc.Params{"ok": false}
 	f, err := fs.NewFs(ctx, fsString)
 	if err != nil && !errors.Is(err, fs.ErrorIsFile) {

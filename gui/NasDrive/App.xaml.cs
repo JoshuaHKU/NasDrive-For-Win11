@@ -88,6 +88,7 @@ public partial class App : Application
         {
             PromptCredentials = p => Dispatcher.Invoke(() => CredentialPromptWindow.Ask(p)),
             PromptOtp = (p, err) => Dispatcher.Invoke(() => OtpPromptWindow.Ask($"{p.Name} – {p.Username}@{p.Host}", err)),
+            PromptHostKey = (p, type, fp, changed) => Dispatcher.Invoke(() => HostKeyWindow.Ask($"{p.Host}:{p.Port}", type, fp, changed)),
         };
         AppServices.Engine.EngineFailed += msg => Dispatcher.BeginInvoke(() =>
         {

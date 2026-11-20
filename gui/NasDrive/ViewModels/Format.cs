@@ -33,7 +33,7 @@ public static class Format
         var text = Loc.Instance[key];
         if (text == key) text = Loc.T("Err.unknown", msg);
         else if (code == "http") text = Loc.T(key, status);
-        else if (code is "unknown" or "nfs" or "syno") text = Loc.T(key, msg);
+        else if (code is "unknown" or "nfs" or "syno" or "ftp") text = Loc.T(key, msg);
         return text;
     }
 }

@@ -11,7 +11,7 @@ public sealed class DriveProfile
     public string Name { get; set; } = "WebDAV";
     /// <summary>Drive letter without colon, e.g. "Z".</summary>
     public string DriveLetter { get; set; } = "Z";
-    /// <summary>"webdav", "nfs" or "synology".</summary>
+    /// <summary>"webdav", "nfs", "synology", "sftp" or "ftp".</summary>
     public string ServiceType { get; set; } = "webdav";
     /// <summary>NFS export path on the server, e.g. "/volume1/share".</summary>
     public string NfsExport { get; set; } = "";
@@ -20,7 +20,17 @@ public sealed class DriveProfile
     public int NfsGid { get; set; }
     /// <summary>Connect from a source port below 1024 (most NAS defaults require it).</summary>
     public bool NfsPrivilegedPort { get; set; } = true;
-    /// <summary>rclone webdav vendor: other, nextcloud, owncloud, ...</summary>
+    /// <summary>SFTP authentication: "password" or "key" (private key file).</summary>
+    public string SshAuth { get; set; } = "password";
+    /// <summary>Path of the SFTP private key file (OpenSSH or PEM). Its passphrase is in Credential Manager.</summary>
+    public string SshKeyFile { get; set; } = "";
+    /// <summary>Pinned SSH host key ("algo base64", public, not secret) confirmed by the user.</summary>
+    public string SshHostKey { get; set; } = "";
+    /// <summary>SHA256 fingerprint of <see cref="SshHostKey"/>, for display.</summary>
+    public string SshHostKeyFingerprint { get; set; } = "";
+    /// <summary>FTP encryption: "explicit" (FTPS, AUTH TLS), "implicit" (FTPS, port 990) or "none".</summary>
+    public string FtpEncryption { get; set; } = "explicit";
+    /// <summary>rclone webdav vendor: "other" or "nextcloud" (Nextcloud/ownCloud preset).</summary>
     public string Vendor { get; set; } = "other";
     public bool Https { get; set; } = true;
     public string Host { get; set; } = "";
@@ -42,8 +52,17 @@ public sealed class DriveProfile
 
     public bool IsNfs => string.Equals(ServiceType, "nfs", StringComparison.OrdinalIgnoreCase);
     public bool IsSynology => string.Equals(ServiceType, "synology", StringComparison.OrdinalIgnoreCase);
+    public bool IsSftp => string.Equals(ServiceType, "sftp", StringComparison.OrdinalIgnoreCase);
+    public bool IsFtp => string.Equals(ServiceType, "ftp", StringComparison.OrdinalIgnoreCase);
+    public bool IsWebDav => !IsNfs && !IsSynology && !IsSftp && !IsFtp;
+    /// <summary>WebDAV with the Nextcloud/ownCloud preset.</summary>
+    public bool IsNextcloud => IsWebDav && string.Equals(Vendor, "nextcloud", StringComparison.OrdinalIgnoreCase);
+    public bool UsesSshKey => IsSftp && string.Equals(SshAuth, "key", StringComparison.OrdinalIgnoreCase);
 
-    public string Url => IsNfs ? $"nfs://{HostForUrl}{NfsExport}" : $"{(Https ? "https" : "http")}://{HostForUrl}{PortSuffix}";
+    public string Url => IsNfs ? $"nfs://{HostForUrl}{NfsExport}"
+        : IsSftp ? $"sftp://{HostForUrl}{(Port == 22 ? "" : $":{Port}")}"
+        : IsFtp ? $"{(FtpEncryption == "none" ? "ftp" : "ftps")}://{HostForUrl}:{Port}"
+        : $"{(Https ? "https" : "http")}://{HostForUrl}{PortSuffix}";
 
     private string HostForUrl => Host.Contains(':') && !Host.StartsWith('[') ? $"[{Host}]" : Host;
 

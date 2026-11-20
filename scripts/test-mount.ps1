@@ -20,6 +20,13 @@
     powershell -ExecutionPolicy Bypass -File test-mount.ps1 `
       -Protocol synology -Url https://192.168.1.10:5001 -RemotePath /share/sub -SkipTlsVerify -ProfileId <id>
 
+  SFTP / FTP (credential target holds user + password, or the key passphrase):
+
+    powershell -ExecutionPolicy Bypass -File test-mount.ps1 -Protocol sftp -Url nas -Port 22 `
+      -Credential NasDrive:test-sftp -RemotePath /data [-KeyFile C:\keys\id_ed25519] [-HostKeyMismatchTest]
+    powershell -ExecutionPolicy Bypass -File test-mount.ps1 -Protocol ftp -Url nas -Port 21 `
+      -Credential NasDrive:test-ftp -FtpEncryption explicit -SkipTlsVerify -RemotePath /
+
   NFS (no credential needed; the NAS must allow this PC's IP):
 
     powershell -ExecutionPolicy Bypass -File test-mount.ps1 `
@@ -32,7 +39,11 @@ param(
     [Parameter(Mandatory)] [string] $Url,
     [Parameter(Mandatory)] [string] $RemotePath,
     [string] $Drive = "T:",
-    [ValidateSet("webdav", "nfs", "synology")] [string] $Protocol = "webdav",
+    [ValidateSet("webdav", "nfs", "synology", "sftp", "ftp")] [string] $Protocol = "webdav",
+    [int] $Port = 0,
+    [string] $KeyFile = "",
+    [ValidateSet("explicit", "implicit", "none")] [string] $FtpEncryption = "explicit",
+    [switch] $HostKeyMismatchTest,
     [string] $ProfileId = "",
     [string] $Export = "",
     [string] $Credential = "NasDrive:test-nas",
@@ -48,6 +59,8 @@ param(
     [ValidateSet("none", "filesecurity", "ro")] [string] $RoMode = "filesecurity"
 )
 $ErrorActionPreference = "Stop"
+# $port is reused below for the engine's rc port (PowerShell names are case-insensitive).
+$ServicePort = $Port
 switch ($RoMode) {
     "filesecurity" { $RoExtraOptions = @("FileSecurity=D:P(A;;FRFX;;;WD)") }
     "ro" { $RoExtraOptions = @("ro") }
@@ -138,6 +151,36 @@ try {
         Step "Testing connection to nfs://$Url$Export$RemotePath"
         $fs = ":nfs,host=$(& $q $Url),export=$(& $q $Export),rpc_timeout='30s':" + $RemotePath
         $volHost = $Url
+    } elseif ($Protocol -eq "sftp") {
+        $sport = $(if ($ServicePort) { $ServicePort } else { 22 })
+        Step "Fetching the SSH host key of ${Url}:$sport"
+        $hk = Rc "nasdrive/sshhostkey" @{ host = $Url; port = $sport }
+        if ($hk.ok) { Ok "$($hk.keyType) $($hk.fingerprint)" } else { Fail "host key: $($hk.errorCode) $($hk.errorMsg)"; throw "no host key" }
+        $obscured = if ($pass) { (Rc "core/obscure" @{ clear = $pass }).obscured } else { "" }
+        $sftpBase = ":sftp,host=$(& $q $Url),port='$sport',user=$(& $q $user),disable_hashcheck='true',override.timeout='100s',override.contimeout='15s'"
+        if ($KeyFile) { $sftpBase += ",key_file=$(& $q $KeyFile)"; if ($obscured) { $sftpBase += ",key_file_pass=$(& $q $obscured)" } }
+        elseif ($obscured) { $sftpBase += ",pass=$(& $q $obscured)" }
+        if ($HostKeyMismatchTest) {
+            Step "A different pinned host key must be refused"
+            # Same key type with one key byte changed: valid, but not the server's key.
+            $chars = $hk.key.ToCharArray(); $i = $chars.Length - 3
+            $chars[$i] = $(if ($chars[$i] -eq 'A') { 'B' } else { 'A' })
+            $wrong = -join $chars
+            $t = Rc "nasdrive/test" @{ fs = "$sftpBase,host_keys=$(& $q $wrong):"; timeout = "20s" } 60
+            if (-not $t.ok -and $t.errorCode -eq "ssh_hostkey_changed") { Ok "refused: $($t.errorCode)" } else { Fail "not refused: $($t.errorCode) $($t.errorMsg)" }
+        }
+        $fs = "$sftpBase,host_keys=$(& $q $hk.key):" + $RemotePath
+        $volHost = $Url
+        Step "Testing SFTP connection to ${Url}:$sport$RemotePath ($(if ($KeyFile) { 'private key' } else { 'password' }))"
+    } elseif ($Protocol -eq "ftp") {
+        $fport = $(if ($ServicePort) { $ServicePort } elseif ($FtpEncryption -eq "implicit") { 990 } else { 21 })
+        Step "Testing FTP ($FtpEncryption) connection to ${Url}:$fport$RemotePath"
+        $obscured = (Rc "core/obscure" @{ clear = $pass }).obscured
+        $fs = ":ftp,host=$(& $q $Url),port='$fport',user=$(& $q $user),pass=$(& $q $obscured),override.timeout='100s',override.contimeout='15s'"
+        if ($FtpEncryption -eq "explicit") { $fs += ",explicit_tls='true'" } elseif ($FtpEncryption -eq "implicit") { $fs += ",tls='true'" }
+        if ($SkipTlsVerify -and $FtpEncryption -ne "none") { $fs += ",no_check_certificate='true'" }
+        $fs += ":" + $RemotePath
+        $volHost = $Url
     } elseif ($Protocol -eq "synology") {
         Step "Testing Synology connection to $Url$RemotePath"
         $obscured = (Rc "core/obscure" @{ clear = $pass }).obscured
@@ -210,7 +253,8 @@ try {
     do { Start-Sleep -Milliseconds 500; $dc = (Rc "nasdrive/mounts").mounts[0].diskCache
          $pending = [int]$dc.uploadsInProgress + [int]$dc.uploadsQueued } while ($pending -gt 0 -and (Get-Date) -lt $deadline)
     $ut = $sw.Elapsed.TotalSeconds
-    Ok ("write to cache {0:N1} MB/s, upload to NAS done after {1:N1} s ({2:N1} MB/s)" -f (64 / $wt), $ut, (64 / $ut))
+    if ($pending -gt 0) { Fail ("upload not finished after {0:N0} s ({1} still pending)" -f $ut, $pending) }
+    else { Ok ("write to cache {0:N1} MB/s, upload to NAS done after {1:N1} s ({2:N1} MB/s)" -f (64 / $wt), $ut, (64 / $ut)) }
     Remove-Item "$big"
     Remove-Item "$Drive\$name.renamed"
     Start-Sleep -Seconds 1

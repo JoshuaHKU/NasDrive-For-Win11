@@ -54,6 +54,8 @@ public sealed class DriveEditorViewModel : ObservableObject
         SelectExportCommand = new RelayCommand(o => { if (o is string e) NfsExport = e; });
         RefreshSharesCommand = new AsyncCommand(RefreshSharesAsync, () => !_listingShares && !_busy && !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(Username));
         SelectShareCommand = new RelayCommand(o => { if (o is string sh) BasePath = "/" + sh; });
+        BrowseKeyCommand = new RelayCommand(BrowseKeyFile);
+        ForgetHostKeyCommand = new RelayCommand(() => { _p.SshHostKey = ""; _p.SshHostKeyFingerprint = ""; OnPropertyChanged(nameof(HostKeyText)); });
         if (_p.IsNfs && !string.IsNullOrWhiteSpace(_p.Host)) _ = RefreshExportsAsync(false);
     }
 
@@ -66,38 +68,146 @@ public sealed class DriveEditorViewModel : ObservableObject
     public ICommand SelectExportCommand { get; }
     public ICommand RefreshSharesCommand { get; }
     public ICommand SelectShareCommand { get; }
+    public ICommand BrowseKeyCommand { get; }
+    public ICommand ForgetHostKeyCommand { get; }
 
     // --- protocol --------------------------------------------------------
 
-    private static readonly string[] DefaultNames = { "WebDAV", "NFS", "Synology" };
+    private static readonly string[] DefaultNames = { "WebDAV", "NFS", "Synology", "SFTP", "FTP", "Nextcloud" };
+
+    /// <summary>Default port of each service type (FTP depends on the encryption mode).</summary>
+    private int DefaultPort(string type) => type switch
+    {
+        "synology" => _p.Https ? 5001 : 5000,
+        "sftp" => 22,
+        "ftp" => _p.FtpEncryption == "implicit" ? 990 : 21,
+        _ => _p.Https ? 443 : 80,
+    };
+
+    private static readonly int[] WellKnownPorts = { 80, 443, 5000, 5001, 5005, 5006, 22, 21, 990 };
 
     /// <summary>Switches the service type, adjusting defaults that depend on it.</summary>
     private void SetService(string type)
     {
         if (string.Equals(_p.ServiceType, type, StringComparison.OrdinalIgnoreCase)) return;
-        var wasSynology = _p.IsSynology;
         _p.ServiceType = type;
         if (_isNew && DefaultNames.Contains(_p.Name))
-            _p.Name = type switch { "nfs" => "NFS", "synology" => "Synology", _ => "WebDAV" };
-        if (_p.IsSynology)
-        {
-            _p.Anonymous = false;
-            if (_p.Port is 443 or 80 or 5005 or 5006) _p.Port = _p.Https ? 5001 : 5000;
-        }
-        else if (wasSynology && _p.Port is 5000 or 5001)
-        {
-            _p.Port = _p.Https ? 443 : 80;
-        }
+            _p.Name = type switch { "nfs" => "NFS", "synology" => "Synology", "sftp" => "SFTP", "ftp" => "FTP", _ => "WebDAV" };
+        if (_p.IsSynology || _p.IsSftp) _p.Anonymous = false;
+        // Replace a well-known port of the previous type by the new type's default.
+        if (WellKnownPorts.Contains(_p.Port)) _p.Port = DefaultPort(type);
         if (_p.IsNfs && _p.TimeoutSec > 60) _p.TimeoutSec = 30;
         RaiseAll();
         if (_p.IsNfs && !string.IsNullOrWhiteSpace(_p.Host)) _ = RefreshExportsAsync(false);
     }
 
-    public bool IsWebDav { get => !_p.IsNfs && !_p.IsSynology; set { if (value) SetService("webdav"); } }
+    public bool IsWebDav { get => _p.IsWebDav; set { if (value) SetService("webdav"); } }
     public bool IsNfs { get => _p.IsNfs; set { if (value) SetService("nfs"); } }
     public bool IsSynology { get => _p.IsSynology; set { if (value) SetService("synology"); } }
-    /// <summary>WebDAV and Synology share the HTTP(S) address, account and TLS fields.</summary>
+    public bool IsSftp { get => _p.IsSftp; set { if (value) SetService("sftp"); } }
+    public bool IsFtp { get => _p.IsFtp; set { if (value) SetService("ftp"); } }
+    /// <summary>Everything but NFS has an address with port, a path and an account.</summary>
     public bool IsHttp => !_p.IsNfs;
+    /// <summary>WebDAV and Synology: HTTPS switch, proxy.</summary>
+    public bool IsWeb => _p.IsWebDav || _p.IsSynology;
+    public bool ShowAnonymous => _p.IsWebDav || _p.IsFtp;
+    public bool ShowTlsOptions => IsWeb || (_p.IsFtp && _p.FtpEncryption != "none");
+
+    // --- Nextcloud preset --------------------------------------------------
+
+    public bool IsNextcloud
+    {
+        get => _p.IsNextcloud;
+        set
+        {
+            _p.Vendor = value ? "nextcloud" : "other";
+            if (_isNew && DefaultNames.Contains(_p.Name)) _p.Name = value ? "Nextcloud" : "WebDAV";
+            RaiseAll();
+        }
+    }
+
+    // --- SFTP ------------------------------------------------------------
+
+    public bool SshUseKey
+    {
+        get => _p.UsesSshKey;
+        set { _p.SshAuth = value ? "key" : "password"; RaiseAll(); }
+    }
+
+    public bool SshUsePassword { get => !_p.UsesSshKey; set { if (value) SshUseKey = false; } }
+
+    public string SshKeyFile
+    {
+        get => _p.SshKeyFile;
+        set { _p.SshKeyFile = (value ?? "").Trim().Trim('"'); OnPropertyChanged(); OnPropertyChanged(nameof(IsValid)); }
+    }
+
+    public bool KeyFileMissing => _p.UsesSshKey && string.IsNullOrWhiteSpace(_p.SshKeyFile);
+
+    public string HostKeyText => string.IsNullOrEmpty(_p.SshHostKeyFingerprint)
+        ? Loc.T("Editor.SshNoHostKey")
+        : Loc.T("Editor.SshHostKeyFmt", _p.SshHostKey.Split(' ')[0], _p.SshHostKeyFingerprint);
+
+    private void BrowseKeyFile()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = Loc.T("Editor.SshKeyFile"),
+            Filter = Loc.T("Editor.SshKeyFilter") + "|*.*",
+            InitialDirectory = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh"),
+        };
+        if (dlg.ShowDialog() == true) SshKeyFile = dlg.FileName;
+    }
+
+    /// <summary>
+    /// Fetches the SFTP server's host key and asks the user to trust it if it is new or
+    /// changed. Returns false if the user declined or the server could not be reached.
+    /// </summary>
+    private async Task<bool> EnsureHostKeyAsync()
+    {
+        var r = await AppServices.Drives.SshHostKeyAsync(_p.Host, _p.Port);
+        if (r["ok"]?.GetValue<bool>() != true)
+        {
+            TestResult = Format.EngineError(r, "ssh");
+            return false;
+        }
+        var key = r["key"]!.GetValue<string>();
+        if (key == _p.SshHostKey) return true;
+        var fp = r["fingerprint"]?.GetValue<string>() ?? "";
+        if (!Views.HostKeyWindow.Ask($"{_p.Host}:{_p.Port}", r["keyType"]?.GetValue<string>() ?? "", fp, !string.IsNullOrEmpty(_p.SshHostKey)))
+        {
+            TestResult = Loc.T("Editor.SshHostKeyDeclined");
+            return false;
+        }
+        _p.SshHostKey = key;
+        _p.SshHostKeyFingerprint = fp;
+        OnPropertyChanged(nameof(HostKeyText));
+        return true;
+    }
+
+    // --- FTP -------------------------------------------------------------
+
+    public List<Choice> FtpEncryptions { get; } = new()
+    {
+        new("explicit", Loc.T("Editor.FtpExplicit")),
+        new("implicit", Loc.T("Editor.FtpImplicit")),
+        new("none", Loc.T("Editor.FtpNone")),
+    };
+
+    public string FtpEncryption
+    {
+        get => _p.FtpEncryption;
+        set
+        {
+            if (_p.FtpEncryption == value) return;
+            var oldDefault = DefaultPort("ftp");
+            _p.FtpEncryption = value;
+            if (_p.Port == oldDefault) _p.Port = DefaultPort("ftp");
+            RaiseAll();
+        }
+    }
+
+    public bool ShowFtpWarning => _p.IsFtp && _p.FtpEncryption == "none";
 
     // --- Synology shared folders ----------------------------------------
 
@@ -231,7 +341,9 @@ public sealed class DriveEditorViewModel : ObservableObject
 
     public string Title => Loc.T(_isNew ? "Editor.NewTitle" : "Editor.EditTitle");
     public string SaveText => Loc.T(_isNew ? "Editor.Connect" : "Editor.Save");
-    public string PasswordHint => _hasStoredPassword ? Loc.T("Editor.PassKeep") : Loc.T("Editor.Pass");
+    public string PasswordHint => _p.UsesSshKey
+        ? (_hasStoredPassword ? Loc.T("Editor.SshPassphraseKeep") : Loc.T("Editor.SshPassphrase"))
+        : _hasStoredPassword ? Loc.T("Editor.PassKeep") : Loc.T("Editor.Pass");
 
     public List<string> Letters { get; }
     public List<string> CacheModes { get; } = new() { "full", "writes", "minimal", "off" };
@@ -267,8 +379,8 @@ public sealed class DriveEditorViewModel : ObservableObject
         }
     }
 
-    public string Scheme => _p.Https ? "https://" : "http://";
-    public bool ShowHttpWarning => !_p.Https;
+    public string Scheme => _p.IsSftp ? "sftp://" : _p.IsFtp ? (_p.FtpEncryption == "none" ? "ftp://" : "ftps://") : _p.Https ? "https://" : "http://";
+    public bool ShowHttpWarning => IsWeb && !_p.Https;
 
     public string Host
     {
@@ -284,6 +396,20 @@ public sealed class DriveEditorViewModel : ObservableObject
                 if (_isNew && _p.Name == "WebDAV") _p.Name = "NFS";
                 RaiseAll();
                 _ = RefreshExportsAsync(false);
+                return;
+            }
+            if (Uri.TryCreate(v, UriKind.Absolute, out var other) && other.Scheme is "sftp" or "ftp" or "ftps")
+            {
+                // sftp://user@host:port/path, ftp://… or ftps://…
+                SetService(other.Scheme == "sftp" ? "sftp" : "ftp");
+                if (other.Scheme == "ftps") _p.FtpEncryption = other.Port == 990 ? "implicit" : "explicit";
+                if (other.Scheme == "ftp") _p.FtpEncryption = "none";
+                _p.Host = other.Host;
+                _p.Port = other.IsDefaultPort || other.Port <= 0 ? DefaultPort(_p.ServiceType) : other.Port;
+                var opath = Uri.UnescapeDataString(other.AbsolutePath);
+                if (opath.Length > 1) _p.BasePath = opath.TrimEnd('/');
+                if (!string.IsNullOrEmpty(other.UserInfo)) _p.Username = Uri.UnescapeDataString(other.UserInfo.Split(':')[0]);
+                RaiseAll();
                 return;
             }
             if (v.Contains("://") && Uri.TryCreate(v, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
@@ -352,9 +478,10 @@ public sealed class DriveEditorViewModel : ObservableObject
 
     public bool HostMissing => string.IsNullOrWhiteSpace(_p.Host);
     public bool UserMissing => NeedsCredentials && string.IsNullOrWhiteSpace(_p.Username);
-    public bool PasswordMissing => NeedsCredentials && string.IsNullOrEmpty(_password) && !_hasStoredPassword;
+    /// <summary>A private key's passphrase is optional.</summary>
+    public bool PasswordMissing => NeedsCredentials && !_p.UsesSshKey && string.IsNullOrEmpty(_password) && !_hasStoredPassword;
 
-    private bool NeedsCredentials => !_p.IsNfs && !(_p.Anonymous && !_p.IsSynology) && !_p.PromptCredentials;
+    private bool NeedsCredentials => !_p.IsNfs && !(_p.Anonymous && ShowAnonymous) && !_p.PromptCredentials;
 
     public bool IsValid
     {
@@ -364,7 +491,8 @@ public sealed class DriveEditorViewModel : ObservableObject
             OnPropertyChanged(nameof(UserMissing));
             OnPropertyChanged(nameof(PasswordMissing));
             OnPropertyChanged(nameof(ExportMissing));
-            return !HostMissing && !UserMissing && !PasswordMissing && !ExportMissing && !string.IsNullOrEmpty(_p.DriveLetter);
+            OnPropertyChanged(nameof(KeyFileMissing));
+            return !HostMissing && !UserMissing && !PasswordMissing && !ExportMissing && !KeyFileMissing && !string.IsNullOrEmpty(_p.DriveLetter);
         }
     }
 
@@ -382,6 +510,7 @@ public sealed class DriveEditorViewModel : ObservableObject
         TestResult = Loc.T("Editor.Testing");
         try
         {
+            if (_p.IsSftp && !await EnsureHostKeyAsync()) return;
             var r = await WithSynologyOtpAsync(() => AppServices.Drives.TestAsync(_p.Clone(), EffectivePassword()));
             if (r["ok"]?.GetValue<bool>() == true)
             {
@@ -394,7 +523,7 @@ public sealed class DriveEditorViewModel : ObservableObject
             }
             else
             {
-                TestResult = Format.EngineError(r, _p.IsNfs ? "nfs" : _p.IsSynology ? "syno" : null);
+                TestResult = Format.EngineError(r, _p.IsNfs ? "nfs" : _p.IsSynology ? "syno" : _p.IsSftp ? "ssh" : _p.IsFtp ? "ftp" : null);
                 Log.Warn($"Test {_p.ServiceType} {_p.Host} failed: {r["errorCode"]} {r["errorMsg"]}");
             }
         }
@@ -423,7 +552,7 @@ public sealed class DriveEditorViewModel : ObservableObject
         var wasConnected = !_isNew && runtime.State is DriveState.Connected or DriveState.Offline;
 
         // Store or clear the password before saving the profile.
-        if (_p.IsNfs || _p.Anonymous || _p.PromptCredentials)
+        if (_p.IsNfs || (_p.Anonymous && ShowAnonymous) || _p.PromptCredentials)
         {
             try { CredentialStore.Delete(CredentialStore.DriveKey(_p.Id)); } catch { }
         }

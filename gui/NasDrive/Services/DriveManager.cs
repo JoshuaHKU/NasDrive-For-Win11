@@ -47,6 +47,12 @@ public sealed class DriveManager : IDisposable
     /// <summary>Asks the UI for credentials. Returns (user, pass) or null if cancelled.</summary>
     public Func<DriveProfile, Task<(string User, string Pass)?>>? PromptCredentials { get; set; }
 
+    /// <summary>
+    /// Asks the UI to trust an SSH host key: (profile, key type, SHA256 fingerprint, changed).
+    /// Returns true to trust it. "changed" means it differs from the pinned key.
+    /// </summary>
+    public Func<DriveProfile, string, string, bool, bool>? PromptHostKey { get; set; }
+
     /// <summary>Asks the UI for a Synology 2-step verification code (profile, error to show). Null = cancelled.</summary>
     public Func<DriveProfile, string?, string?>? PromptOtp { get; set; }
 
@@ -88,8 +94,16 @@ public sealed class DriveManager : IDisposable
             if (!WindowsShell.IsLetterFree(p.DriveLetter))
                 throw new UserFacingException(Loc.T("Err.LetterInUse", p.Mountpoint));
 
+            if (p.IsSftp && !await EnsureSshHostKeyAsync(p).ConfigureAwait(false))
+            {
+                Set(p.Id, r => { r.State = DriveState.Disconnected; r.WantConnected = false; });
+                return;
+            }
+
             string? pass = null;
-            if (!p.Anonymous && !p.IsNfs)
+            // WebDAV/FTP may be anonymous; an SFTP private key may have no passphrase.
+            var anonymous = p.Anonymous && (p.IsWebDav || p.IsFtp);
+            if (!anonymous && !p.IsNfs)
             {
                 if (credentials == null && p.PromptCredentials)
                 {
@@ -108,7 +122,7 @@ public sealed class DriveManager : IDisposable
                 else
                 {
                     pass = CredentialStore.Read(CredentialStore.DriveKey(p.Id))?.Secret;
-                    if (pass == null) throw new UserFacingException(Loc.T("Err.NoPassword"));
+                    if (pass == null && !p.UsesSshKey) throw new UserFacingException(Loc.T("Err.NoPassword"));
                 }
             }
 
@@ -160,7 +174,7 @@ public sealed class DriveManager : IDisposable
                 vfsOpt["DiskSpaceTotalSize"] = p.Advanced.DiskSpaceTotal;
 
             if (p.NetworkMode)
-                WindowsShell.SetNetworkDriveLabel(volName, p.Name, Loc.T("Shell.Comment", p.IsNfs ? "NFS" : p.IsSynology ? "Synology" : "WebDAV"));
+                WindowsShell.SetNetworkDriveLabel(volName, p.Name, Loc.T("Shell.Comment", ProtocolName(p)));
             Log.Info($"Mounting {p.Name} ({p.Url}{ConnectionString.NormalizePath(p.BasePath)}) on {p.Mountpoint}");
             try
             {
@@ -198,6 +212,45 @@ public sealed class DriveManager : IDisposable
         var obscured = string.IsNullOrEmpty(pass) || p.Anonymous || p.IsNfs ? null : await Engine.ObscureAsync(pass).ConfigureAwait(false);
         var fs = ConnectionString.Build(p, obscured, ProxyUrl(), SynoDevice(p));
         return await Engine.TestAsync(fs, Math.Clamp(p.TimeoutSec, 5, 60)).ConfigureAwait(false);
+    }
+
+    public static string ProtocolName(DriveProfile p) =>
+        p.IsNfs ? "NFS" : p.IsSynology ? "Synology" : p.IsSftp ? "SFTP" : p.IsFtp ? "FTP" : p.IsNextcloud ? "Nextcloud" : "WebDAV";
+
+    // --- SFTP host keys -----------------------------------------------------
+
+    /// <summary>Fetches the host key the SSH server presents (raw engine result).</summary>
+    public async Task<JsonObject> SshHostKeyAsync(string host, int port)
+    {
+        return await Engine.CallAsync("nasdrive/sshhostkey", new { host = host.Trim('[', ']'), port = port > 0 ? port : 22, timeout = "10s" },
+                                      TimeSpan.FromSeconds(20)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Makes sure the server's host key is the pinned one, asking the user to confirm a
+    /// first-seen or changed key. Updates and saves the profile when a key is accepted.
+    /// Returns false if the user declined.
+    /// </summary>
+    private async Task<bool> EnsureSshHostKeyAsync(DriveProfile p)
+    {
+        var r = await SshHostKeyAsync(p.Host, p.Port).ConfigureAwait(false);
+        if (r["ok"]?.GetValue<bool>() != true) throw new UserFacingException(ViewModels.Format.EngineError(r, "ssh"));
+        var key = r["key"]!.GetValue<string>();
+        if (key == p.SshHostKey) return true;
+        var changed = !string.IsNullOrEmpty(p.SshHostKey);
+        var fingerprint = r["fingerprint"]?.GetValue<string>() ?? "";
+        if (PromptHostKey?.Invoke(p, r["keyType"]?.GetValue<string>() ?? "", fingerprint, changed) != true) return false;
+        p.SshHostKey = key;
+        p.SshHostKeyFingerprint = fingerprint;
+        var saved = _profiles.All.FirstOrDefault(x => x.Id == p.Id);
+        if (saved != null)
+        {
+            saved.SshHostKey = key;
+            saved.SshHostKeyFingerprint = fingerprint;
+            _profiles.Upsert(saved);
+        }
+        Log.Info($"Trusted SSH host key {fingerprint} for {p.Host}:{p.Port}");
+        return true;
     }
 
     // --- Synology ---------------------------------------------------------
