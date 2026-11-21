@@ -140,7 +140,7 @@ public sealed class SettingsViewModel : ObservableObject
         try
         {
             var u = await UpdateService.CheckAsync();
-            UpdateStatus = u.Available ? Loc.T("Update.AvailableFmt", u.LatestVersion) : Loc.T("Update.Latest");
+            UpdateStatus = u.Available ? Loc.T("Update.AvailableFmt", u.LatestVersion) : Loc.T("Update.Latest", AppInfo.VersionText);
             if (u.Available && await Dialogs.ConfirmAsync(Loc.T("Update.OpenPage", u.LatestVersion)))
                 Platforms.Current.OpenUrl(u.Url);
         }

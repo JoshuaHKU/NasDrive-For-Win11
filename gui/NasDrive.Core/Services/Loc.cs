@@ -259,7 +259,7 @@ public sealed class Loc : INotifyPropertyChanged
         ["Settings.ClearCacheConfirm"] = "清空缓存需要先断开所有驱动器。是否继续？",
 
         ["Update.Checking"] = "正在检查…",
-        ["Update.Latest"] = "您正在使用最新版本",
+        ["Update.Latest"] = "您正在使用最新版本（{0}）",
         ["Update.AvailableFmt"] = "发现新版本 {0}",
         ["Update.Failed"] = "检查更新失败",
         ["Update.OpenPage"] = "发现新版本 {0}，是否打开下载页面？",
@@ -513,7 +513,7 @@ public sealed class Loc : INotifyPropertyChanged
         ["Settings.CacheRestart"] = "The cache folder changed. The engine must restart and all drives reconnect. Do it now?",
         ["Settings.ClearCacheConfirm"] = "Clearing the cache disconnects all drives first. Continue?",
         ["Update.Checking"] = "Checking…",
-        ["Update.Latest"] = "You are up to date",
+        ["Update.Latest"] = "You are up to date ({0})",
         ["Update.AvailableFmt"] = "Version {0} is available",
         ["Update.Failed"] = "Update check failed",
         ["Update.OpenPage"] = "Version {0} is available. Open the download page?",

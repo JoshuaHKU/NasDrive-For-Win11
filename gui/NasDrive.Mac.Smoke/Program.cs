@@ -97,6 +97,14 @@ public static class Program
         CredentialStore.Delete(kk);
         Check("keychain write/read/delete", back is ("user1", "密码-p@ss") && CredentialStore.Read(kk) == null, $"{back}");
 
+        TestUpdatePick();
+        try
+        {
+            var live = await UpdateService.CheckAsync();
+            Console.WriteLine($"  live update check: current {AppInfo.VersionText}, newest with {UpdateService.InstallerSuffix()}: '{live.LatestVersion}', available={live.Available}");
+        }
+        catch (Exception ex) { Console.WriteLine("  live update check skipped: " + ex.Message); }
+
         await AppServices.Engine.StartAsync();
         AppServices.Drives.StartPolling();
         var health = await AppServices.Engine.Client!.HealthAsync();
@@ -249,6 +257,31 @@ public static class Program
         }
         await vm.DisconnectAsync(item);
         await Until(() => item.State == DriveState.Disconnected, 60, "webdav disconnect");
+    }
+
+    /// <summary>Update check: only releases with this platform's installer count.</summary>
+    static void TestUpdatePick()
+    {
+        Console.WriteLine("== update check");
+        static System.Text.Json.Nodes.JsonObject Rel(string tag, bool pre, params string[] assets) => new()
+        {
+            ["tag_name"] = tag, ["draft"] = false, ["prerelease"] = pre, ["html_url"] = "https://example.invalid/" + tag,
+            ["assets"] = new System.Text.Json.Nodes.JsonArray(assets.Select(a => (System.Text.Json.Nodes.JsonNode)new System.Text.Json.Nodes.JsonObject { ["name"] = a }).ToArray()),
+        };
+        var list = new System.Text.Json.Nodes.JsonArray(
+            Rel("v0.7.0", true, "NasDrive-0.7.0-osx-arm64.dmg"),
+            Rel("v0.6.1", false, "NasDrive-0.6.1-x64-setup.exe"),
+            Rel("v0.6.0", false, "NasDrive-0.6.0-x64-setup.exe", "NasDrive-0.6.0-osx-arm64.dmg", "NasDrive-0.6.0-osx-x64.dmg"),
+            Rel("v0.4.0", false, "NasDrive-0.4.0-x64-setup.exe"));
+        var mac = UpdateService.Pick(list, new Version(0, 5, 0, 0), "-osx-arm64.dmg");
+        Check("update: mac skips Windows-only and pre-releases", mac.Available && mac.LatestVersion == "0.6.0" && mac.Url.EndsWith("v0.6.0"), $"{mac}");
+        var win = UpdateService.Pick(list, new Version(0, 5, 0, 0), "-x64-setup.exe");
+        Check("update: windows picks newest exe release", win.Available && win.LatestVersion == "0.6.1", $"{win}");
+        var same = UpdateService.Pick(list, new Version(0, 6, 0, 0), "-osx-x64.dmg");
+        Check("update: same version (0.6.0 vs 0.6.0.0) is up to date", !same.Available, $"{same}");
+        var none = UpdateService.Pick(new System.Text.Json.Nodes.JsonArray(Rel("v0.4.0", false, "NasDrive-0.4.0-x64-setup.exe")), new Version(0, 5, 0, 0), "-osx-arm64.dmg");
+        Check("update: no mac release yet means up to date", !none.Available, $"{none}");
+        Check("update: app version is the app's, not the library's", AppInfo.Version == typeof(Program).Assembly.GetName().Version, AppInfo.VersionText);
     }
 
     static string SafePath(Process p) { try { return p.MainModule?.FileName ?? ""; } catch { return ""; } }

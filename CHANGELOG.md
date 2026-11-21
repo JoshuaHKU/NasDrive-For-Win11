@@ -8,8 +8,9 @@
   - 密码保存在**钥匙串**；"登录时启动"使用 LaunchAgent；引擎意外退出后自动清理失效挂载并重连。
   - 安装包：`NasDrive-0.5.0-osx-arm64.dmg` / `osx-x64.dmg`（`scripts/build-mac.sh` 构建）。
 - 代码结构：界面无关的逻辑（配置、引擎守护、驱动器状态机、多语言等）抽取为共享库 **NasDrive.Core**，Windows 版（WPF）与 macOS 版（Avalonia）各自只实现平台层（`IPlatform`）。
+- 检查更新：只认带有本平台安装包的正式版本（macOS 不会被提示只有 Windows 安装包的版本，反之亦然），"已是最新"提示中显示当前版本号；版本号取自应用本身而不是共享库。
 - 引擎：`nasdrive/health` 增加 `mountBackend` / `mountOk` / `mountVersion`；Windows 版行为不变。
-- 测试：新增 macOS 无界面端到端测试 `scripts/test-mac.sh`（渲染全部页面，并经真实的视图模型、引擎与挂载完成 WebDAV/只读/SFTP/FTP/NFS 读写改删、引擎崩溃恢复等 53 项检查）。
+- 测试：新增 macOS 无界面端到端测试 `scripts/test-mac.sh`（渲染全部页面，并经真实的视图模型、引擎与挂载完成 WebDAV/只读/SFTP/FTP/NFS 读写改删、引擎崩溃恢复、挂载位置切换、检查更新等 57 项检查）。
 
 ## 0.4.0
 

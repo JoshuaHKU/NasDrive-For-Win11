@@ -158,7 +158,7 @@ public partial class App : Application
                 }
                 else if (interactive)
                 {
-                    Dialogs.Info(Loc.T("Update.Latest"));
+                    Dialogs.Info(Loc.T("Update.Latest", AppInfo.VersionText));
                 }
             });
         }

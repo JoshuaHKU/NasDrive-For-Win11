@@ -124,7 +124,7 @@ public sealed class SettingsViewModel : ObservableObject
         try
         {
             var u = await UpdateService.CheckAsync();
-            UpdateStatus = u.Available ? Loc.T("Update.AvailableFmt", u.LatestVersion) : Loc.T("Update.Latest");
+            UpdateStatus = u.Available ? Loc.T("Update.AvailableFmt", u.LatestVersion) : Loc.T("Update.Latest", AppInfo.VersionText);
             if (u.Available && Dialogs.Confirm(Loc.T("Update.OpenPage", u.LatestVersion)))
                 WindowsShell.OpenUrl(u.Url);
         }

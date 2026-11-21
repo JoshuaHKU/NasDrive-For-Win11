@@ -72,7 +72,11 @@ public static class Dialogs
         var w = MakeWindow(title);
         var ok = new Button { Content = Loc.T(question ? "Mac.Yes" : "Mac.Ok"), IsDefault = true, Classes = { "accent" } };
         var panel = new StackPanel { Margin = new Thickness(20) };
-        panel.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = error ? Brushes.IndianRed : null });
+        var body = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap };
+        // Only set a colour for errors: a null Foreground makes the text invisible
+        // instead of falling back to the theme colour.
+        if (error) body.Foreground = Brushes.IndianRed;
+        panel.Children.Add(body);
         if (question)
         {
             var no = new Button { Content = Loc.T("Mac.No"), IsCancel = true };
@@ -139,11 +143,13 @@ public static class Dialogs
         Row(1, Loc.T("HostKey.Type"), keyType);
         Row(2, Loc.T("HostKey.Fingerprint"), fingerprint);
         var panel = new StackPanel { Margin = new Thickness(20), Spacing = 8 };
-        panel.Children.Add(new TextBlock
+        var heading = new TextBlock
         {
             Text = Loc.T(changed ? "HostKey.ChangedHeading" : "HostKey.NewHeading"), FontWeight = FontWeight.Bold, FontSize = 14,
-            Foreground = changed ? Brushes.IndianRed : null, TextWrapping = TextWrapping.Wrap,
-        });
+            TextWrapping = TextWrapping.Wrap,
+        };
+        if (changed) heading.Foreground = Brushes.IndianRed;
+        panel.Children.Add(heading);
         panel.Children.Add(new TextBlock { Text = Loc.T(changed ? "HostKey.ChangedBody" : "HostKey.NewBody"), TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(new Border { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1), Padding = new Thickness(10), Child = grid });
         panel.Children.Add(new TextBlock { Text = Loc.T(changed ? "HostKey.ChangedHint" : "HostKey.NewHint"), TextWrapping = TextWrapping.Wrap, Opacity = 0.7, FontSize = 11 });

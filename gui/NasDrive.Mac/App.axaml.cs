@@ -161,7 +161,7 @@ public partial class App : Application
                 if (await Dialogs.ConfirmAsync(Loc.T("Update.OpenPage", u.LatestVersion)))
                     Platforms.Current.OpenUrl(u.Url);
             }
-            else if (interactive) await Dialogs.InfoAsync(Loc.T("Update.Latest"));
+            else if (interactive) await Dialogs.InfoAsync(Loc.T("Update.Latest", AppInfo.VersionText));
         }
         catch (Exception ex)
         {
