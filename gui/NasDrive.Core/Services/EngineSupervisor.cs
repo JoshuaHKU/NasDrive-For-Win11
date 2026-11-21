@@ -77,7 +77,7 @@ public sealed class EngineSupervisor : IDisposable
                 client.Dispose();
                 return false;
             }
-            if (!Elevation.IsCurrentElevated() && Elevation.IsProcessElevated(proc.Id))
+            if (!NasDrive.Platform.Platforms.Current.IsCurrentElevated() && NasDrive.Platform.Platforms.Current.IsProcessElevated(proc.Id))
             {
                 // Left over from an elevated session: its drives are invisible to Explorer.
                 // Ask it to unmount and quit (we may not be allowed to kill it), then start our own.

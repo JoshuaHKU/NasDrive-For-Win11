@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Platform-neutral part of NasDrive: models, engine supervisor and rc client,
+       drive state machine, connection strings, settings, localization. The
+       Windows (WPF) and macOS (Avalonia) apps reference it and supply an
+       IPlatform implementation. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>NasDrive</RootNamespace>
+    <AssemblyName>NasDrive.Core</AssemblyName>
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/src/NasDrive.Core</PathMap>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+</Project>

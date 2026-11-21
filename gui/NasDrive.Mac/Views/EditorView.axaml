@@ -1,0 +1,214 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:v="using:NasDrive.Mac.Views"
+             x:Class="NasDrive.Mac.Views.EditorView">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Width" Value="110" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.hint">
+      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.warn">
+      <Setter Property="Foreground" Value="#E3B341" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </UserControl.Styles>
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Padding="16,10" BorderThickness="0,1,0,0" BorderBrush="#33808080">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="{Binding SaveText}" Command="{Binding SaveCommand}" IsDefault="True" Classes="accent" />
+          <Button Content="{v:T Editor.Cancel}" Command="{Binding CancelCommand}" IsCancel="True" />
+          <Button Content="{v:T Editor.Help}" Command="{Binding HelpCommand}" />
+        </StackPanel>
+        <Button Grid.Column="1" Content="{v:T Editor.Test}" Command="{Binding TestCommand}" />
+      </Grid>
+    </Border>
+    <ScrollViewer>
+      <StackPanel Margin="20,14" Spacing="10">
+        <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="Bold" />
+
+        <!-- Service type -->
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Classes="label" Text="{v:T Editor.ServiceType}" />
+          <WrapPanel>
+            <RadioButton GroupName="proto" Content="WebDAV" IsChecked="{Binding IsWebDav}" Margin="0,0,12,0" />
+            <RadioButton GroupName="proto" Content="NFS" IsChecked="{Binding IsNfs}" Margin="0,0,12,0" />
+            <RadioButton GroupName="proto" Content="{v:T Editor.Synology}" IsChecked="{Binding IsSynology}" Margin="0,0,12,0" />
+            <RadioButton GroupName="proto" Content="SFTP" IsChecked="{Binding IsSftp}" Margin="0,0,12,0" />
+            <RadioButton GroupName="proto" Content="FTP" IsChecked="{Binding IsFtp}" />
+          </WrapPanel>
+        </StackPanel>
+
+        <!-- Name and mount point -->
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Classes="label" Text="{v:T Editor.Name}" VerticalAlignment="Top" Margin="0,6,0,0" />
+          <StackPanel Spacing="2">
+            <TextBox Text="{Binding Name}" Width="320" HorizontalAlignment="Left" />
+            <TextBlock Classes="hint" Text="{Binding MountHint}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Options -->
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Classes="label" Text="" />
+          <WrapPanel MaxWidth="560">
+            <CheckBox Content="{v:T Editor.AutoConnect}" IsChecked="{Binding AutoConnect}" Margin="0,0,16,0" />
+            <CheckBox Content="{v:T Editor.ReadOnly}" IsChecked="{Binding ReadOnly}" Margin="0,0,16,0" />
+            <CheckBox Content="{v:T Editor.Proxy}" IsChecked="{Binding UseProxy}" IsVisible="{Binding IsWeb}" Margin="0,0,16,0" />
+            <CheckBox Content="{v:T Editor.PromptCred}" IsChecked="{Binding PromptCredentials}" IsVisible="{Binding IsHttp}" Margin="0,0,16,0" />
+            <CheckBox Content="{v:T Editor.Nextcloud}" IsChecked="{Binding IsNextcloud}" IsVisible="{Binding IsWebDav}" ToolTip.Tip="{v:T Editor.NextcloudHint}" />
+          </WrapPanel>
+        </StackPanel>
+
+        <!-- Address -->
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Classes="label" Text="{v:T Editor.Address}" />
+          <CheckBox Content="HTTPS" IsChecked="{Binding Https}" IsVisible="{Binding IsWeb}" />
+          <TextBlock Text="{Binding Scheme}" FontFamily="Menlo" VerticalAlignment="Center" Opacity="0.6" IsVisible="{Binding IsHttp}" />
+          <TextBlock Text="nfs://" FontFamily="Menlo" VerticalAlignment="Center" Opacity="0.6" IsVisible="{Binding IsNfs}" />
+          <TextBox Text="{Binding Host}" Width="250" Watermark="{v:T Editor.Host}" />
+          <TextBlock Text=":" VerticalAlignment="Center" IsVisible="{Binding IsHttp}" />
+          <TextBox Text="{Binding Port}" Width="70" IsVisible="{Binding IsHttp}" />
+        </StackPanel>
+
+        <!-- Path (WebDAV / Synology / SFTP / FTP) -->
+        <StackPanel Orientation="Horizontal" IsVisible="{Binding IsHttp}">
+          <TextBlock Classes="label" Text="" />
+          <StackPanel Spacing="4" Width="520">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBox Text="{Binding BasePath}" Watermark="{v:T Editor.Path}" />
+              <Button Grid.Column="1" Margin="8,0,0,0" Content="{v:T Editor.SynoShares}" Command="{Binding RefreshSharesCommand}" IsVisible="{Binding IsSynology}" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding Shares}" IsVisible="{Binding IsSynology}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Content="{Binding}" Margin="0,0,6,4" Padding="8,2"
+                          Command="{Binding $parent[ItemsControl].DataContext.SelectShareCommand}" CommandParameter="{Binding}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="hint" Text="{Binding SharesStatus}" IsVisible="{Binding IsSynology}" />
+            <TextBlock Classes="hint" Text="{v:T Editor.SynoHint}" IsVisible="{Binding IsSynology}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- NFS export -->
+        <StackPanel Orientation="Horizontal" IsVisible="{Binding IsNfs}">
+          <TextBlock Classes="label" Text="{v:T Editor.NfsExport}" VerticalAlignment="Top" Margin="0,6,0,0" />
+          <StackPanel Spacing="4" Width="520">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBox Text="{Binding NfsExport}" Watermark="/volume1/share" />
+              <Button Grid.Column="1" Margin="8,0,0,0" Content="{v:T Editor.NfsRefresh}" Command="{Binding RefreshExportsCommand}" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding Exports}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Content="{Binding}" Margin="0,0,6,4" Padding="8,2"
+                          Command="{Binding $parent[ItemsControl].DataContext.SelectExportCommand}" CommandParameter="{Binding}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="hint" Text="{Binding ExportsStatus}" />
+            <TextBox Text="{Binding BasePath}" Watermark="{v:T Editor.NfsSubPath}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Account -->
+        <StackPanel Orientation="Horizontal" IsVisible="{Binding IsHttp}">
+          <TextBlock Classes="label" Text="{v:T Editor.Account}" VerticalAlignment="Top" Margin="0,6,0,0" />
+          <StackPanel Spacing="6">
+            <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding CredentialsEnabled}">
+              <TextBox Text="{Binding Username}" Width="200" Watermark="{v:T Editor.User}" />
+              <TextBox Text="{Binding Password}" Width="200" PasswordChar="•" Watermark="{Binding PasswordHint}" />
+            </StackPanel>
+            <CheckBox Content="{v:T Editor.Anonymous}" IsChecked="{Binding Anonymous}" IsVisible="{Binding ShowAnonymous}" />
+            <StackPanel Spacing="6" IsVisible="{Binding IsSftp}">
+              <StackPanel Orientation="Horizontal" Spacing="16">
+                <RadioButton GroupName="sshauth" Content="{v:T Editor.SshAuthPassword}" IsChecked="{Binding SshUsePassword}" />
+                <RadioButton GroupName="sshauth" Content="{v:T Editor.SshAuthKey}" IsChecked="{Binding SshUseKey}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding SshUseKey}">
+                <TextBox Text="{Binding SshKeyFile}" Width="320" Watermark="~/.ssh/id_ed25519" />
+                <Button Content="{v:T Editor.Browse}" Command="{Binding BrowseKeyCommand}" />
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+
+        <!-- NFS identity -->
+        <StackPanel Orientation="Horizontal" IsVisible="{Binding IsNfs}">
+          <TextBlock Classes="label" Text="{v:T Editor.NfsIdentity}" VerticalAlignment="Top" Margin="0,6,0,0" />
+          <StackPanel Spacing="4" Width="520">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="UID" VerticalAlignment="Center" />
+              <TextBox Text="{Binding NfsUid}" Width="80" />
+              <TextBlock Text="GID" VerticalAlignment="Center" Margin="8,0,0,0" />
+              <TextBox Text="{Binding NfsGid}" Width="80" />
+            </StackPanel>
+            <TextBlock Classes="hint" Text="{v:T Editor.NfsIdentityHint}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Security -->
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Classes="label" Text="{v:T Editor.Security}" VerticalAlignment="Top" Margin="0,6,0,0" />
+          <StackPanel Spacing="6" Width="520">
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsFtp}">
+              <TextBlock Text="{v:T Editor.FtpEncryption}" VerticalAlignment="Center" />
+              <ComboBox ItemsSource="{Binding FtpEncryptions}" SelectedItem="{Binding FtpEncryptionChoice}" Width="240" />
+            </StackPanel>
+            <CheckBox Content="{v:T Editor.SkipTls}" IsChecked="{Binding SkipTlsVerify}" IsVisible="{Binding ShowTlsOptions}" />
+            <TextBlock Classes="warn" Text="{v:T Editor.HttpWarning}" IsVisible="{Binding ShowHttpWarning}" />
+            <TextBlock Classes="warn" Text="{v:T Editor.FtpWarning}" IsVisible="{Binding ShowFtpWarning}" />
+            <StackPanel IsVisible="{Binding IsSftp}" Spacing="2">
+              <TextBlock Text="{Binding HostKeyText}" FontFamily="Menlo" FontSize="11" TextWrapping="Wrap" />
+              <Button Content="{v:T Editor.SshForgetHostKey}" Command="{Binding ForgetHostKeyCommand}" Padding="6,2" />
+            </StackPanel>
+            <StackPanel IsVisible="{Binding IsNfs}" Spacing="2">
+              <CheckBox Content="{v:T Editor.NfsPrivPort}" IsChecked="{Binding NfsPrivilegedPort}" />
+              <TextBlock Classes="warn" Text="{v:T Editor.NfsWarning}" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="{v:T Editor.Timeout}" VerticalAlignment="Center" />
+              <ComboBox ItemsSource="{Binding Timeouts}" SelectedItem="{Binding TimeoutSec}" Width="90" />
+              <TextBlock Text="{v:T Editor.Seconds}" VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Advanced -->
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Classes="label" Text="" />
+          <StackPanel Spacing="6">
+            <ToggleButton Content="{v:T Editor.Advanced}" IsChecked="{Binding ShowAdvanced}" Padding="8,2" />
+            <Grid ColumnDefinitions="Auto,140,Auto,140" RowDefinitions="Auto,Auto" IsVisible="{Binding ShowAdvanced}">
+              <TextBlock Text="{v:T Editor.CacheMode}" VerticalAlignment="Center" Margin="0,0,8,6" />
+              <ComboBox Grid.Column="1" ItemsSource="{Binding CacheModes}" SelectedItem="{Binding CacheMode}" Margin="0,0,0,6" />
+              <TextBlock Grid.Column="2" Text="{v:T Editor.CacheMaxSize}" VerticalAlignment="Center" Margin="16,0,8,6" />
+              <TextBox Grid.Column="3" Text="{Binding CacheMaxSize}" Margin="0,0,0,6" />
+              <TextBlock Grid.Row="1" Text="{v:T Editor.DirCache}" VerticalAlignment="Center" Margin="0,0,8,0" />
+              <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DirCacheTime}" />
+              <TextBlock Grid.Row="1" Grid.Column="2" Text="{v:T Editor.DiskTotal}" VerticalAlignment="Center" Margin="16,0,8,0" />
+              <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DiskSpaceTotal}" Watermark="4T" />
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Test result -->
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Classes="label" Text="" />
+          <TextBlock Text="{Binding TestResult}" TextWrapping="Wrap" Width="520" Foreground="{Binding TestOk, Converter={x:Static v:Converters.OkToBrush}}" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

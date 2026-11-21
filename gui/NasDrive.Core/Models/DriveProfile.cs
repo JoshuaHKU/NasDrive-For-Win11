@@ -72,7 +72,8 @@ public sealed class DriveProfile
         ? (NfsUid == 0 ? Host : $"uid {NfsUid}@{Host}")
         : Anonymous || string.IsNullOrEmpty(Username) ? Host : $"{Username}@{Host}";
 
-    public string Mountpoint => DriveLetter.ToUpperInvariant() + ":";
+    /// <summary>Where the drive is mounted: "Z:" on Windows, a folder on macOS.</summary>
+    public string Mountpoint => NasDrive.Platform.Platforms.Current.MountPoint(this);
 
     public DriveProfile Clone()
     {

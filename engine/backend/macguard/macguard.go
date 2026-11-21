@@ -14,6 +14,7 @@ import (
 	"errors"
 	"io"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -49,8 +50,14 @@ func Blocked(name string) bool {
 }
 
 // Fs wraps another Fs.
+//
+// Only the methods of the fs.Fs interface are promoted from the embedded
+// remote, so the optional ones (Move, Copy, PutStream, ...) are implemented
+// below with the same filtering and advertised through our own Features;
+// handing out the inner remote's Features would let them bypass macguard.
 type Fs struct {
 	fs.Fs
+	features *fs.Features
 }
 
 // NewFs creates the wrapped remote at root.
@@ -68,11 +75,163 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 	if inner == nil {
 		return nil, err
 	}
-	return &Fs{Fs: inner}, err // err may be fs.ErrorIsFile
+	f := &Fs{Fs: inner}
+	stub := &fs.Features{
+		CaseInsensitive:          true,
+		DuplicateFiles:           true,
+		ReadMimeType:             true,
+		WriteMimeType:            true,
+		CanHaveEmptyDirectories:  true,
+		BucketBased:              true,
+		BucketBasedRootOK:        true,
+		SetTier:                  true,
+		GetTier:                  true,
+		ReadMetadata:             true,
+		WriteMetadata:            true,
+		UserMetadata:             true,
+		ReadDirMetadata:          true,
+		WriteDirMetadata:         true,
+		WriteDirSetModTime:       true,
+		UserDirMetadata:          true,
+		DirModTimeUpdatesOnWrite: true,
+		PartialUploads:           true,
+		NoMultiThreading:         true,
+		Overlay:                  true,
+	}
+	f.features = stub.Fill(ctx, f).Mask(ctx, inner).WrapsFs(f, inner)
+	return f, err // err may be fs.ErrorIsFile
 }
 
+// Features returns macguard's own optional features (masked by the inner remote's).
+func (f *Fs) Features() *fs.Features { return f.features }
+
+// Name of the wrapped remote.
+func (f *Fs) String() string { return "macguard:" + f.Fs.String() }
+
+// UnWrap returns the wrapped remote.
+func (f *Fs) UnWrap() fs.Fs { return f.Fs }
+
+// About passes quota through.
+func (f *Fs) About(ctx context.Context) (*fs.Usage, error) {
+	do := f.Fs.Features().About
+	if do == nil {
+		return nil, errors.New("about not supported")
+	}
+	return do(ctx)
+}
+
+// PutStream discards metadata files and streams everything else.
+func (f *Fs) PutStream(ctx context.Context, in io.Reader, src fs.ObjectInfo, options ...fs.OpenOption) (fs.Object, error) {
+	if blockedPath(src.Remote()) {
+		n, _ := io.Copy(io.Discard, in)
+		return &discarded{f: f, remote: src.Remote(), size: n, modTime: src.ModTime(ctx)}, nil
+	}
+	do := f.Fs.Features().PutStream
+	if do == nil {
+		return nil, errors.New("can't PutStream")
+	}
+	return do(ctx, in, src, options...)
+}
+
+// Move renames on the server. Metadata files exist only in the mount's cache,
+// so renaming one (the macOS NFS client renames "._a" along with "a") just
+// moves the stand-in; without this the VFS would try to copy data that was
+// never stored and leave an undeletable ghost entry behind.
+func (f *Fs) Move(ctx context.Context, src fs.Object, remote string) (fs.Object, error) {
+	if d, ok := src.(*discarded); ok {
+		return &discarded{f: f, remote: remote, size: d.size, modTime: d.modTime}, nil
+	}
+	if blockedPath(remote) {
+		// A real file renamed to a metadata name: drop it from the server.
+		size, modTime := src.Size(), src.ModTime(ctx)
+		if err := src.Remove(ctx); err != nil {
+			return nil, err
+		}
+		return &discarded{f: f, remote: remote, size: size, modTime: modTime}, nil
+	}
+	do := f.Fs.Features().Move
+	if do == nil {
+		return nil, fs.ErrorCantMove
+	}
+	return do(ctx, src, remote)
+}
+
+// Copy copies on the server; copies of or to metadata names are discarded.
+func (f *Fs) Copy(ctx context.Context, src fs.Object, remote string) (fs.Object, error) {
+	if d, ok := src.(*discarded); ok {
+		return &discarded{f: f, remote: remote, size: d.size, modTime: d.modTime}, nil
+	}
+	if blockedPath(remote) {
+		return &discarded{f: f, remote: remote, size: src.Size(), modTime: src.ModTime(ctx)}, nil
+	}
+	do := f.Fs.Features().Copy
+	if do == nil {
+		return nil, fs.ErrorCantCopy
+	}
+	return do(ctx, src, remote)
+}
+
+// DirMove renames a folder on the server; metadata folders were never created.
+func (f *Fs) DirMove(ctx context.Context, src fs.Fs, srcRemote, dstRemote string) error {
+	if blockedPath(srcRemote) {
+		return nil
+	}
+	do := f.Fs.Features().DirMove
+	if do == nil {
+		return fs.ErrorCantDirMove
+	}
+	if s, ok := src.(*Fs); ok {
+		src = s.Fs
+	}
+	return do(ctx, src, srcRemote, dstRemote)
+}
+
+// Purge deletes a folder tree on the server.
+func (f *Fs) Purge(ctx context.Context, dir string) error {
+	if blockedPath(dir) {
+		return nil
+	}
+	do := f.Fs.Features().Purge
+	if do == nil {
+		return fs.ErrorCantPurge
+	}
+	return do(ctx, dir)
+}
+
+// ChangeNotify passes server-side change notifications through, minus metadata paths.
+func (f *Fs) ChangeNotify(ctx context.Context, notify func(string, fs.EntryType), pollInterval <-chan time.Duration) {
+	do := f.Fs.Features().ChangeNotify
+	if do == nil {
+		return
+	}
+	do(ctx, func(p string, t fs.EntryType) {
+		if !blockedPath(p) {
+			notify(p, t)
+		}
+	}, pollInterval)
+}
+
+var (
+	_ fs.Abouter        = (*Fs)(nil)
+	_ fs.PutStreamer    = (*Fs)(nil)
+	_ fs.Mover          = (*Fs)(nil)
+	_ fs.Copier         = (*Fs)(nil)
+	_ fs.DirMover       = (*Fs)(nil)
+	_ fs.Purger         = (*Fs)(nil)
+	_ fs.ChangeNotifier = (*Fs)(nil)
+	_ fs.UnWrapper      = (*Fs)(nil)
+)
+
+// partialSuffix matches the temporary name rclone uploads to before renaming
+// (e.g. ".DS_Store.1a2b3c4d.partial" on SFTP/FTP).
+var partialSuffix = regexp.MustCompile(`\.[0-9a-f]{8}\.partial$`)
+
 func blockedPath(remote string) bool {
-	for _, part := range strings.Split(remote, "/") {
+	parts := strings.Split(remote, "/")
+	if n := len(parts) - 1; n >= 0 {
+		parts[n] = partialSuffix.ReplaceAllString(parts[n], "")
+	}
+	for _, part := range parts {
 		if Blocked(part) {
 			return true
 		}
@@ -150,7 +309,7 @@ func (o *discarded) SetModTime(ctx context.Context, t time.Time) error {
 	return nil
 }
 func (o *discarded) Hash(ctx context.Context, t hash.Type) (string, error) {
-	return "", hash.ErrUnsupported
+	return "", nil // unknown: nothing was stored to hash
 }
 func (o *discarded) Open(ctx context.Context, options ...fs.OpenOption) (io.ReadCloser, error) {
 	return nil, fs.ErrorObjectNotFound

@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using NasDrive.Models;
+using NasDrive.Platform;
 
 namespace NasDrive.Services;
 
@@ -66,9 +67,6 @@ public sealed class DriveManager : IDisposable
 
     public DriveRuntime Get(string id) => _runtime.GetOrAdd(id, _ => new DriveRuntime());
 
-    /// <summary>SDDL for read-only drives: Everyone may read and execute; nothing else.</summary>
-    public const string ReadOnlyFileSecurity = "FileSecurity=D:P(A;;FRFX;;;WD)";
-
     private EngineClient Engine => _engine.Client ?? throw new InvalidOperationException(Loc.T("Err.EngineNotRunning"));
 
     private SemaphoreSlim LockFor(string id) => _locks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
@@ -91,7 +89,7 @@ public sealed class DriveManager : IDisposable
             if (rt.State is DriveState.Connected or DriveState.Offline) return;
             Set(p.Id, r => { r.State = DriveState.Connecting; r.LastError = null; r.LastErrorCode = null; r.WantConnected = true; });
 
-            if (!WindowsShell.IsLetterFree(p.DriveLetter))
+            if (!Platforms.Current.IsMountPointFree(p))
                 throw new UserFacingException(Loc.T("Err.LetterInUse", p.Mountpoint));
 
             if (p.IsSftp && !await EnsureSshHostKeyAsync(p).ConfigureAwait(false))
@@ -140,23 +138,8 @@ public sealed class DriveManager : IDisposable
                 }
                 fs = ready;
             }
-            var volName = VolumeName(p);
             var s = _settings.Current;
-            var mountOpt = new Dictionary<string, object>
-            {
-                ["VolumeName"] = p.NetworkMode ? volName : p.Name,
-                ["NetworkMode"] = p.NetworkMode,
-            };
-            if (p.ReadOnly)
-            {
-                // The VFS refuses writes on a read-only drive, but Windows deletes a
-                // file by marking it "delete on close" and ignores errors at close,
-                // so Explorer would show deletions that never happen. Give every
-                // file a read/execute-only security descriptor so Windows itself
-                // refuses delete (and write) access when the file is opened.
-                // rclone adds the "-o" in front of each extra option.
-                mountOpt["ExtraOptions"] = new[] { ReadOnlyFileSecurity };
-            }
+            var mountOpt = new Dictionary<string, object>();
             var vfsOpt = new Dictionary<string, object>
             {
                 ["CacheMode"] = p.Advanced.CacheMode,
@@ -173,12 +156,13 @@ public sealed class DriveManager : IDisposable
             if (!string.IsNullOrWhiteSpace(p.Advanced.DiskSpaceTotal))
                 vfsOpt["DiskSpaceTotalSize"] = p.Advanced.DiskSpaceTotal;
 
-            if (p.NetworkMode)
-                WindowsShell.SetNetworkDriveLabel(volName, p.Name, Loc.T("Shell.Comment", ProtocolName(p)));
+            // Platform specifics: volume label and read-only ACL (Windows), NFS mount
+            // options, metadata filter and mount folder (macOS).
+            fs = Platforms.Current.PrepareMount(p, fs, mountOpt, vfsOpt);
             Log.Info($"Mounting {p.Name} ({p.Url}{ConnectionString.NormalizePath(p.BasePath)}) on {p.Mountpoint}");
             try
             {
-                await Engine.MountAsync(fs, p.Mountpoint, mountOpt, vfsOpt).ConfigureAwait(false);
+                await Engine.MountAsync(fs, p.Mountpoint, Platforms.Current.MountType, mountOpt, vfsOpt).ConfigureAwait(false);
             }
             catch (EngineException ex)
             {
@@ -186,12 +170,10 @@ public sealed class DriveManager : IDisposable
             }
 
             Set(p.Id, r => { r.State = DriveState.Connected; });
-            if (_settings.Current.AllowCustomDriveIcons)
-                WindowsShell.SetDriveAppearance(p.DriveLetter, p.Name, null);
-            WindowsShell.NotifyDriveAdded(p.DriveLetter);
+            Platforms.Current.AfterMount(p, _settings.Current);
             _ = PollAsync();
             if (_settings.Current.OpenExplorerAfterConnect)
-                WindowsShell.OpenInExplorer(p.Mountpoint + "\\");
+                Platforms.Current.OpenFolder(p.Mountpoint);
         }
         catch (Exception ex)
         {
@@ -340,8 +322,7 @@ public sealed class DriveManager : IDisposable
             {
                 // Already gone, e.g. the engine restarted.
             }
-            WindowsShell.ClearDriveAppearance(p.DriveLetter);
-            WindowsShell.NotifyDriveRemoved(p.DriveLetter);
+            Platforms.Current.AfterUnmount(p);
             Set(p.Id, r => { r.State = DriveState.Disconnected; r.EngineFs = null; r.UploadsPending = 0; });
             return DisconnectResult.Done;
         }
@@ -376,6 +357,13 @@ public sealed class DriveManager : IDisposable
 
     private async Task OnEngineReadyAsync(bool fresh)
     {
+        // A freshly started engine owns no mounts: remove any left behind by a
+        // previous engine (macOS keeps dead NFS mounts; no-op on Windows).
+        if (fresh)
+        {
+            try { Platforms.Current.CleanupStaleMounts(_profiles.All); }
+            catch (Exception ex) { Log.Warn("cleanup of stale mounts: " + ex.Message); }
+        }
         await RefreshMountsAsync().ConfigureAwait(false);
         var profiles = _profiles.All;
         // After a crash restart, reconnect what the user had connected; on
@@ -534,24 +522,6 @@ public sealed class DriveManager : IDisposable
             auth = Uri.EscapeDataString(s.ProxyUser) + ":" + Uri.EscapeDataString(pass) + "@";
         }
         return $"http://{auth}{s.ProxyHost}:{s.ProxyPort}";
-    }
-
-    /// <summary>UNC style volume name for network mode, unique among profiles.</summary>
-    private string VolumeName(DriveProfile p)
-    {
-        static string Clean(string s)
-        {
-            var chars = s.Select(c => "\\/:*?\"<>|".Contains(c) || char.IsControl(c) ? '_' : c).ToArray();
-            var r = new string(chars).Trim();
-            return r.Length == 0 ? "share" : r;
-        }
-        var host = Clean(p.Host.Trim('[', ']'));
-        var share = Clean(p.Name);
-        var clash = _profiles.All.Any(o => o.Id != p.Id &&
-                                           string.Equals(Clean(o.Host.Trim('[', ']')), host, StringComparison.OrdinalIgnoreCase) &&
-                                           string.Equals(Clean(o.Name), share, StringComparison.OrdinalIgnoreCase));
-        if (clash) share += "-" + p.DriveLetter.ToUpperInvariant();
-        return $"\\\\{host}\\{share}";
     }
 
     public void Dispose() => _pollTimer?.Dispose();

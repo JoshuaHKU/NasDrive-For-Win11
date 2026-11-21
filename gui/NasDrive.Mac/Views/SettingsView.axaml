@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:v="using:NasDrive.Mac.Views"
+             x:Class="NasDrive.Mac.Views.SettingsView">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Margin" Value="0,10,0,2" />
+    </Style>
+  </UserControl.Styles>
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Padding="16,10" BorderThickness="0,1,0,0" BorderBrush="#33808080">
+      <Button Content="{v:T Settings.Apply}" Command="{Binding SaveCommand}" Classes="accent" />
+    </Border>
+    <ScrollViewer>
+      <StackPanel Margin="20,14" Spacing="6">
+        <TextBlock Text="{v:T Settings.Title}" FontSize="20" FontWeight="Bold" />
+
+        <TextBlock Classes="section" Text="{v:T Settings.General}" />
+        <CheckBox Content="{v:T Mac.StartAtLogin}" IsChecked="{Binding StartAtLogin}" />
+        <CheckBox Content="{v:T Mac.OpenFinder}" IsChecked="{Binding OpenFinderAfterConnect}" />
+        <CheckBox Content="{v:T Settings.AutoCheck}" IsChecked="{Binding AutoCheckUpdates}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="{v:T Settings.Language}" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" Width="180" />
+        </StackPanel>
+
+        <TextBlock Classes="section" Text="{v:T Mac.MountRootLabel}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBox Text="{Binding MountRoot}" Width="380" />
+          <Button Content="{v:T Settings.Browse}" Command="{Binding BrowseMountRootCommand}" />
+          <Button Content="{v:T Settings.Default}" Command="{Binding DefaultMountRootCommand}" />
+        </StackPanel>
+        <TextBlock Text="{Binding MountRootHelp}" Opacity="0.65" FontSize="11" TextWrapping="Wrap" />
+
+        <TextBlock Classes="section" Text="{v:T Settings.Cache}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBox Text="{Binding CacheDir}" Width="380" />
+          <Button Content="{v:T Settings.Browse}" Command="{Binding BrowseCacheCommand}" />
+          <Button Content="{v:T Settings.Default}" Command="{Binding DefaultCacheCommand}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="{v:T Settings.ReadDuration}" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding ReadDurations}" SelectedItem="{Binding ReadCacheDuration}" Width="100" />
+          <TextBlock Text="{v:T Settings.WriteDelay}" VerticalAlignment="Center" Margin="12,0,0,0" />
+          <ComboBox ItemsSource="{Binding WriteDelays}" SelectedItem="{Binding WriteBackDelay}" Width="100" />
+        </StackPanel>
+
+        <TextBlock Classes="section" Text="{v:T Settings.Proxy}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <ComboBox ItemsSource="{Binding ProxyTypes}" SelectedItem="{Binding ProxyType}" Width="100" />
+          <TextBox Text="{Binding ProxyHost}" Width="200" Watermark="proxy.example.com" IsEnabled="{Binding ProxyEnabled}" />
+          <TextBox Text="{Binding ProxyPort}" Width="70" IsEnabled="{Binding ProxyEnabled}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding ProxyEnabled}">
+          <TextBox Text="{Binding ProxyUser}" Width="180" Watermark="{v:T Editor.User}" />
+          <TextBox Text="{Binding ProxyPassword}" Width="180" PasswordChar="•" Watermark="{v:T Editor.Pass}" />
+        </StackPanel>
+        <TextBlock Text="{v:T Settings.ProxyHint}" Opacity="0.65" FontSize="11" />
+
+        <TextBlock Classes="section" Text="{v:T Settings.Advanced}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="{v:T Settings.LogLevel}" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding LogLevels}" SelectedItem="{Binding LogLevel}" Width="120" />
+          <Button Content="{v:T Settings.OpenLogs}" Command="{Binding OpenLogsCommand}" />
+        </StackPanel>
+
+        <TextBlock Classes="section" Text="{v:T Settings.About}" />
+        <TextBlock Text="{Binding VersionText}" />
+        <TextBlock Text="{Binding EngineInfo}" Opacity="0.7" FontSize="11" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="{v:T Settings.Check}" Command="{Binding CheckUpdateCommand}" />
+          <TextBlock Text="{Binding UpdateStatus}" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Text="NasDrive is open source software (MIT) built on rclone and the macOS NFS client." Opacity="0.6" FontSize="11" TextWrapping="Wrap" />
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

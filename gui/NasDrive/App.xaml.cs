@@ -28,6 +28,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        Platform.Platforms.Current = new WindowsPlatform();
         // Drives mounted from an elevated process are invisible to Explorer, so never
         // run elevated: hand over to a normal-token instance started via the shell.
         if (Elevation.IsSplitTokenElevated())

@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
+using NasDrive.Platform;
 
 namespace NasDrive.Services;
 
@@ -9,19 +10,13 @@ namespace NasDrive.Services;
 /// Stores secrets in the Windows Credential Manager (protected by DPAPI for
 /// the current user). Target names are "NasDrive:{key}".
 /// </summary>
-public static class CredentialStore
+public sealed class WindowsCredentialStore : ISecretStore
 {
     private const int CRED_TYPE_GENERIC = 1;
     private const int CRED_PERSIST_LOCAL_MACHINE = 2;
     private const int ERROR_NOT_FOUND = 1168;
 
-    public static string DriveKey(string profileId) => "drive:" + profileId;
-    public const string ProxyKey = "proxy";
-    /// <summary>Synology 2-step verification device token (obscured) for a drive.</summary>
-    public static string SynoDeviceKey(string profileId) => "syno-device:" + profileId;
-    public const string EngineKey = "engine";
-
-    public static void Write(string key, string userName, string secret)
+    public void Write(string key, string userName, string secret)
     {
         var blob = Encoding.Unicode.GetBytes(secret);
         var ptr = Marshal.AllocHGlobal(blob.Length == 0 ? 1 : blob.Length);
@@ -49,7 +44,7 @@ public static class CredentialStore
     }
 
     /// <summary>Returns (user, secret) or null if not found.</summary>
-    public static (string User, string Secret)? Read(string key)
+    public (string User, string Secret)? Read(string key)
     {
         if (!CredRead(Target(key), CRED_TYPE_GENERIC, 0, out var p))
         {
@@ -71,7 +66,7 @@ public static class CredentialStore
         }
     }
 
-    public static void Delete(string key)
+    public void Delete(string key)
     {
         if (!CredDelete(Target(key), CRED_TYPE_GENERIC, 0))
         {

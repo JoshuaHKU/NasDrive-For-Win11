@@ -127,3 +127,47 @@ umount <挂载点>：普通用户即可卸载
 ```
 
 rclone v1.76 的 `cmd/nfsmount` 已通过 `mountlib.AddRc` 注册为 rc 挂载类型，NasDrive 引擎可直接以 `mount/mount mountType=nfsmount` 调用。
+
+## 9. 实施结果（2026-11-20，版本 0.5.0）
+
+P0–P5 按本方案完成，架构与 5.x 一致，未引入 macFUSE/FUSE-T。
+
+| 阶段 | 结果 |
+|---|---|
+| P1 引擎 | `mount_darwin.go`（nfsmount）、`backend/macguard`、`nasdrive/health` 增加 `mountBackend/mountOk/mountVersion`；Windows 与 macOS 均可编译，`go test ./...` 通过 |
+| P2 共享核心 | `gui/NasDrive.Core`（模型、服务、`DriveManager` 等以 `git mv` 迁入）+ `IPlatform`/`ISecretStore`；WPF 版改为 `WindowsPlatform` + `WindowsCredentialStore` |
+| P3 macOS 界面 | `gui/NasDrive.Mac`（Avalonia 11.3）：主窗口/编辑/设置三页、菜单栏图标与菜单、对话框（两步验证码、主机指纹、凭据、文件选择）、钥匙串、LaunchAgent、单实例 |
+| P4 打包 | `scripts/build-mac.sh`：引擎 + 自包含 .NET 单文件 → `NasDrive.app`（`LSUIElement`、icns）→ 临时签名 → dmg（约 50 MB）。正式分发需 Developer ID 签名与公证（`SIGN_ID=…`，再 `xcrun notarytool submit`） |
+| P5 测试 | 见下 |
+
+### 9.1 测试
+
+**macOS（本机，`scripts/test-mac.sh`，53/53 通过）**：Avalonia 无界面模式渲染全部页面（列表、五种协议的编辑页、设置）并人工检查截图；经真实的 `MainViewModel` → `DriveManager` → `MacPlatform` → 引擎挂载：
+
+| 协议 | 读写 3 MB 回读 | 上传到服务器 | `._*`/`.DS_Store` 不落盘 | NFD→NFC | 改名 | 递归删除同步 | 断开后挂载点清除 |
+|---|---|---|---|---|---|---|---|
+| WebDAV（中文卷名"资料盘"） | ✓ | ✓ 5.5 s | ✓ | ✓ | ✓ | ✓ | ✓ |
+| WebDAV 只读 | 写入、删除均被系统拒绝（EROFS） | | | | | | ✓ |
+| SFTP（首次连接确认并固定主机指纹） | ✓ | ✓ 5.0 s | ✓ | ✓ | ✓ | ✓ | ✓ |
+| FTP | ✓ | ✓ 5.0 s | ✓ | ✓ | ✓ | ✓ | ✓ |
+| NFS（真实群晖 NAS） | ✓ | ✓ 9.8 s | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+另：钥匙串读写删除；引擎被强制结束后，新引擎清理失效挂载并自动重连、目录可读；LaunchAgent 创建与删除。
+
+**Windows 回归（Win11 工作站，安装 0.5.0 安装包）**：`test-mount.ps1` 对 WebDAV（含只读全套 9 项）、SFTP（私钥 + 口令）、FTP、NFS（真实 NAS，含只读）全部通过；GUI 自动连接 4 个测试驱动器（WebDAV、SFTP 固定指纹、FTP、NFS 只读），资源管理器显示"名称 (X:)"（含中文名），读写与只读拒绝正常，盘符被占用时正确提示。用户原有的 3 个驱动器在升级后自动重连。
+
+### 9.2 实施中发现并解决的问题
+
+| 问题 | 原因 | 解决 |
+|---|---|---|
+| 改名后文件夹无法删除（I/O 错误） | macOS NFS 客户端改名时连同 `._旧名` 一起改名；`macguard` 内嵌 `fs.Fs`，`Features()` 返回的是内层后端的 Move/Copy，绕过了过滤，VFS 试图复制并不存在的 `._` 文件，留下删不掉的幽灵条目 | `macguard` 改为标准包装器写法：自有 `Features()`（Fill/Mask/WrapsFs），自行实现并过滤 Move/Copy/DirMove/PutStream/Purge/About/ChangeNotify；被丢弃对象可改名、可复制，哈希返回"未知" |
+| SFTP/FTP 上 `.DS_Store` 仍写入服务器 | 这两个后端先上传到 `名称.<8位十六进制>.partial` 再改名，临时名不在拦截列表中 | 拦截时去掉 partial 后缀再判断；把真实文件改名为元数据名时从服务器删除 |
+| .NET/部分程序递归删除失败（EIO） | .NET 先对非空目录直接 `rmdir` 并期望 ENOTEMPTY；go-nfs v0.0.4 把该错误映射成 `NFS3ERR_IO` | 升级 go-nfs 到上游已修复的版本（rmdir 前检查目录内容，返回 `NFS3ERR_NOTEMPTY`） |
+| 屏幕锁定时启动即崩溃 | Avalonia 的渲染计时器基于 CVDisplayLink，锁屏时没有有效显示器（-6661） | 启动时若会话处于锁屏状态则等待解锁后再初始化界面 |
+
+### 9.3 尚未覆盖 / 后续
+
+- 本次测试期间本机处于锁屏状态，**真实窗口下的交互（菜单栏图标、弹窗、钥匙串授权提示）未能实机操作**，界面以无界面渲染 + 视图模型驱动的方式验证；建议在解锁的 Mac 上安装 dmg 走一遍添加/连接/断开流程。
+- 睡眠/唤醒、切换网络后的行为（P0 已列为人工测试项）。
+- Apple Developer ID 签名与公证；Intel 版 dmg 已可构建（`ARCH=amd64`），未在 Intel 机器上实测。
+- Finder 标签等扩展属性只在挂载期间有效（设计取舍，同 macFUSE `noappledouble`）。

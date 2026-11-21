@@ -1,0 +1,83 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="using:NasDrive.Mac.Views"
+        x:Class="NasDrive.Mac.Views.MainWindow"
+        Title="NasDrive" Width="760" Height="600" MinWidth="620" MinHeight="420"
+        Icon="avares://NasDrive/Assets/NasDrive.ico"
+        WindowStartupLocation="CenterScreen">
+  <DockPanel>
+    <!-- Header -->
+    <Border DockPanel.Dock="Top" Background="#1677FF" Padding="16,10">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <Image Source="avares://NasDrive/Assets/NasDrive.ico" Width="28" Height="28" />
+          <StackPanel>
+            <TextBlock Text="NasDrive" FontWeight="Bold" FontSize="16" Foreground="White" />
+            <TextBlock Text="{Binding VersionText}" FontSize="10" Foreground="#DDE8FF" />
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsList}">
+          <Button Content="{v:T Main.Add}" Command="{Binding AddCommand}" />
+          <Button Content="{v:T Main.Settings}" Command="{Binding SettingsCommand}" />
+        </StackPanel>
+        <Button Grid.Column="2" Content="{v:T Main.Back}" Command="{Binding BackCommand}" IsVisible="{Binding IsSettings}" />
+      </Grid>
+    </Border>
+
+    <Panel>
+      <!-- Drive list -->
+      <DockPanel IsVisible="{Binding IsList}">
+        <Border DockPanel.Dock="Bottom" Padding="16,8" BorderThickness="0,1,0,0" BorderBrush="#33808080">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="{v:T Mac.EmptyHint}" Opacity="0.6" FontSize="11" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="{v:T Mac.OpenMountRoot}" Command="{Binding OpenMountRootCommand}" />
+          </Grid>
+        </Border>
+        <Panel>
+          <StackPanel IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+            <TextBlock Text="{v:T Main.Empty}" FontSize="16" HorizontalAlignment="Center" />
+            <TextBlock Text="{v:T Mac.EmptyHint}" Opacity="0.7" HorizontalAlignment="Center" />
+            <Button Content="{v:T Main.AddFirst}" Command="{Binding AddCommand}" HorizontalAlignment="Center" Classes="accent" />
+          </StackPanel>
+          <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Drives}" Margin="12,8">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Margin="0,4" Padding="14,10" CornerRadius="8" Background="#14808080" Opacity="{Binding RowOpacity}">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Spacing="3">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="14" />
+                          <Border Background="#331677FF" CornerRadius="4" Padding="6,1">
+                            <TextBlock Text="{Binding Protocol}" FontSize="11" />
+                          </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding PathText}" Opacity="0.75" FontSize="12" />
+                        <TextBlock Text="{Binding MountText}" Opacity="0.6" FontSize="11" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                          <TextBlock Text="{Binding StatusText}" FontSize="12" />
+                          <TextBlock Text="{Binding SpaceText}" FontSize="12" Opacity="0.7" />
+                        </StackPanel>
+                        <ProgressBar Value="{Binding UsedPercent}" Maximum="100" Height="4" MinHeight="4" Width="260" HorizontalAlignment="Left" IsVisible="{Binding HasQuota}" />
+                        <TextBlock Text="{Binding ErrorText}" Foreground="IndianRed" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasError}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <Button Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" Classes="accent" />
+                        <Button Content="{v:T Main.OpenFolder}" Command="{Binding OpenCommand}" />
+                        <Button Content="{v:T Main.Edit}" Command="{Binding EditCommand}" />
+                        <Button Content="{v:T Main.Delete}" Command="{Binding DeleteCommand}" />
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </Panel>
+      </DockPanel>
+
+      <v:EditorView DataContext="{Binding Editor}" IsVisible="{Binding $parent[Window].DataContext.IsEditor}" />
+      <v:SettingsView DataContext="{Binding SettingsVm}" IsVisible="{Binding $parent[Window].DataContext.IsSettings}" />
+    </Panel>
+  </DockPanel>
+</Window>

@@ -98,26 +98,34 @@ Returns online, errorCode, errorMsg and quota fields.`,
 
 func rcVersion(ctx context.Context, in rc.Params) (rc.Params, error) {
 	w := winfspInfo()
+	mb, mok, mver := mountInfo()
 	return rc.Params{
-		"engine":   Version,
-		"rclone":   fs.Version,
-		"go":       runtime.Version(),
-		"os":       runtime.GOOS,
-		"arch":     runtime.GOARCH,
-		"winfsp":   w.Version,
-		"winfspOk": w.Installed,
+		"mountBackend": mb,
+		"mountOk":      mok,
+		"mountVersion": mver,
+		"engine":       Version,
+		"rclone":       fs.Version,
+		"go":           runtime.Version(),
+		"os":           runtime.GOOS,
+		"arch":         runtime.GOARCH,
+		"winfsp":       w.Version,
+		"winfspOk":     w.Installed,
 	}, nil
 }
 
 func rcHealth(ctx context.Context, in rc.Params) (rc.Params, error) {
 	w := winfspInfo()
+	mb, mok, mver := mountInfo()
 	out := rc.Params{
-		"winfspOk":   w.Installed,
-		"winfspDir":  w.InstallDir,
-		"winfsp":     w.Version,
-		"cacheDir":   config.GetCacheDir(),
-		"cacheDirOk": false,
-		"pid":        os.Getpid(),
+		"mountBackend": mb,
+		"mountOk":      mok,
+		"mountVersion": mver,
+		"winfspOk":     w.Installed,
+		"winfspDir":    w.InstallDir,
+		"winfsp":       w.Version,
+		"cacheDir":     config.GetCacheDir(),
+		"cacheDirOk":   false,
+		"pid":          os.Getpid(),
 	}
 	dir := config.GetCacheDir()
 	if err := os.MkdirAll(dir, 0o700); err == nil {

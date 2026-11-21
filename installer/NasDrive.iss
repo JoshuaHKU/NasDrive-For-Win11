@@ -1,10 +1,10 @@
 ﻿; Inno Setup script for NasDrive. Build on Windows with Inno Setup 6:
-;   iscc /DArch=x64 /DVersion=0.4.0 installer\NasDrive.iss
+;   iscc /DArch=x64 /DVersion=0.5.0 installer\NasDrive.iss
 ; Expects dist\win-x64\ (from scripts/build.sh) and installer\deps\winfsp.msi
 ; (download the latest release from https://github.com/winfsp/winfsp/releases).
 
 #ifndef Version
-  #define Version "0.4.0"
+  #define Version "0.5.0"
 #endif
 #ifndef Arch
   #define Arch "x64"

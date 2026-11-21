@@ -100,3 +100,9 @@ func fileVersion(path string) string {
 
 // arch returns the CPU architecture, which selects the WinFsp DLL to check for.
 func arch() string { return runtime.GOARCH }
+
+// mountInfo describes how drives are mounted on this platform: WinFsp.
+func mountInfo() (backend string, ok bool, version string) {
+	w := winfspInfo()
+	return "winfsp", w.Installed, w.Version
+}

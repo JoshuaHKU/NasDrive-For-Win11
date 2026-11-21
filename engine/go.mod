@@ -60,8 +60,8 @@ require (
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/unknwon/goconfig v1.0.0 // indirect
-	github.com/willscott/go-nfs v0.0.4 // indirect
-	github.com/willscott/go-nfs-client v0.0.0-20251022144359-801f10d98886 // indirect
+	github.com/willscott/go-nfs v0.0.5-0.20261119165022-e645bf8079b1 // indirect
+	github.com/willscott/go-nfs-client v0.0.0-20261119163802-435f28074572 // indirect
 	github.com/winfsp/cgofuse v1.6.1-0.20260531120352-2fa812d1bdc7 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect

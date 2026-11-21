@@ -11,6 +11,8 @@ public sealed class AppSettings
     public string Language { get; set; } = "";
     /// <summary>Empty = default (%LOCALAPPDATA%\NasDrive\Cache).</summary>
     public string CacheDir { get; set; } = "";
+    /// <summary>macOS: parent folder of the drive mount points. Empty = default (~/NasDrive).</summary>
+    public string MountRoot { get; set; } = "";
     /// <summary>How long cached file data is kept (vfs_cache_max_age).</summary>
     public string ReadCacheDuration { get; set; } = "1h";
     /// <summary>Delay before a closed file is uploaded (vfs_write_back).</summary>

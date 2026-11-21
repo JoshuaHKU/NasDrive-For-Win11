@@ -29,7 +29,7 @@ import (
 )
 
 // Version is set at build time with -ldflags "-X main.Version=x.y.z"
-var Version = "0.4.0-dev"
+var Version = "0.5.0-dev"
 
 func main() {
 	// Default to the engine command when started without arguments so a

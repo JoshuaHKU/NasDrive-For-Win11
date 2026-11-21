@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Headless smoke test for the macOS app: renders the real views and drives
+       mounts through the same view models, platform layer and engine.
+       Run via scripts/test-mac.sh. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless" Version="11.3.23" />
+    <PackageReference Include="Avalonia.Skia" Version="11.3.23" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\NasDrive.Mac\NasDrive.Mac.csproj" />
+  </ItemGroup>
+</Project>

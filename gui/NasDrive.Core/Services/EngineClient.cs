@@ -83,8 +83,8 @@ public sealed class EngineClient : IDisposable
 
     public Task<JsonObject> MountsAsync() => CallAsync("nasdrive/mounts", null, TimeSpan.FromSeconds(10));
 
-    public Task<JsonObject> MountAsync(string fs, string mountPoint, object mountOpt, object vfsOpt) =>
-        CallAsync("mount/mount", new { fs, mountPoint, mountType = "cmount", mountOpt, vfsOpt }, TimeSpan.FromSeconds(90));
+    public Task<JsonObject> MountAsync(string fs, string mountPoint, string mountType, object mountOpt, object vfsOpt) =>
+        CallAsync("mount/mount", new { fs, mountPoint, mountType, mountOpt, vfsOpt }, TimeSpan.FromSeconds(90));
 
     public Task<JsonObject> UnmountAsync(string mountPoint) =>
         CallAsync("mount/unmount", new { mountPoint }, TimeSpan.FromSeconds(60));
