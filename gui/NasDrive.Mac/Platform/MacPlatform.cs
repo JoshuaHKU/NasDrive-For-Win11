@@ -32,11 +32,16 @@ public sealed class MacPlatform : IPlatform
     public string MountType => "nfsmount";
     public string EngineFileName => "nasdrive-engine";
 
+    /// <summary>The drive's own mount folder if set, else <see cref="DefaultMountPoint"/>.</summary>
+    public string MountPoint(DriveProfile p) =>
+        string.IsNullOrWhiteSpace(p.MountPath) ? DefaultMountPoint(p) : Normalize(p.MountPath);
+
     /// <summary>&lt;mount folder&gt;/name; a name shared by several drives gets a short id suffix.</summary>
-    public string MountPoint(DriveProfile p)
+    public static string DefaultMountPoint(DriveProfile p)
     {
         var name = FolderName(p.Name);
-        var clash = AppServices.Profiles?.All.Any(o => o.Id != p.Id && string.Equals(FolderName(o.Name), name, StringComparison.OrdinalIgnoreCase)) == true;
+        var clash = AppServices.Profiles?.All.Any(o => o.Id != p.Id && string.IsNullOrWhiteSpace(o.MountPath)
+            && string.Equals(FolderName(o.Name), name, StringComparison.OrdinalIgnoreCase)) == true;
         if (clash) name += "-" + p.Id[..4];
         return Path.Combine(AppPaths.MountRoot, name);
     }
@@ -49,22 +54,66 @@ public sealed class MacPlatform : IPlatform
     /// used (it then exists) and gives the normalised absolute path, or a
     /// message for the user.
     /// </summary>
-    public static string? CheckMountRoot(string input, IEnumerable<string> activeMountPoints, out string full)
+    /// <summary>Expands "~", makes the path absolute and drops a trailing "/"; relative input stays relative.</summary>
+    public static string Normalize(string input)
     {
-        full = "";
         var s = (input ?? "").Trim();
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (s == "~") s = home;
         else if (s.StartsWith("~/", StringComparison.Ordinal)) s = Path.Combine(home, s[2..]);
-        if (!s.StartsWith('/')) return Loc.T("Mac.MountRootRelative");
-        var path = Path.GetFullPath(s).TrimEnd('/');
-        full = path;
+        return s.StartsWith('/') ? Path.GetFullPath(s).TrimEnd('/') : s;
+    }
+
+    private static bool IsSystemPath(string path)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         // Test runs (NASDRIVE_HOME, usually under /var/folders) may use folders below it.
         var testHome = Environment.GetEnvironmentVariable("NASDRIVE_HOME") is { Length: > 0 } t ? Path.GetFullPath(t).TrimEnd('/') : null;
         var inTestHome = testHome != null && path.StartsWith(testHome + "/", StringComparison.Ordinal);
-        if (path.Length == 0 || path is "/Volumes" or "/Users" || path == home
-            || !inTestHome && SystemFolders.Any(f => path == f || path.StartsWith(f + "/", StringComparison.Ordinal)))
-            return Loc.T("Mac.MountRootSystem");
+        return path.Length == 0 || path is "/Volumes" or "/Users" || path == home
+            || !inTestHome && SystemFolders.Any(f => path == f || path.StartsWith(f + "/", StringComparison.Ordinal));
+    }
+
+    private static bool Overlaps(string a, string b) =>
+        a == b || a.StartsWith(b + "/", StringComparison.Ordinal) || b.StartsWith(a + "/", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Checks a drive's own mount folder (editor). Returns null when it can be
+    /// used, or a message for the user. <paramref name="others"/> are the
+    /// mount points of the other drives.
+    /// </summary>
+    public static string? CheckMountPath(string input, IEnumerable<string> others, string? currentlyMountedAt, out string full)
+    {
+        full = Normalize(input);
+        var path = full;
+        if (!path.StartsWith('/')) return Loc.T("Mac.MountRootRelative");
+        if (IsSystemPath(path) || path == AppPaths.MountRoot) return Loc.T("Mac.MountPathSystem");
+        if (others.Any(o => Overlaps(path, o))) return Loc.T("Mac.MountPathClash");
+        if (path == currentlyMountedAt) return null;
+        try
+        {
+            if (File.Exists(path)) return Loc.T("Mac.MountPathNotEmpty");
+            // An existing, non-empty folder would be hidden by the mount.
+            if (Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any()) return Loc.T("Mac.MountPathNotEmpty");
+            var parent = Path.GetDirectoryName(path)!;
+            Directory.CreateDirectory(parent);
+            var probe = Path.Combine(parent, ".nasdrive-write-test-" + Guid.NewGuid().ToString("N")[..6]);
+            File.WriteAllText(probe, "");
+            File.Delete(probe);
+        }
+        catch (Exception ex)
+        {
+            return Loc.T("Mac.MountRootNotWritable", ex.Message);
+        }
+        return null;
+    }
+
+    public static string? CheckMountRoot(string input, IEnumerable<string> activeMountPoints, out string full)
+    {
+        full = Normalize(input);
+        var path = full;
+        if (!path.StartsWith('/')) return Loc.T("Mac.MountRootRelative");
+        if (IsSystemPath(path)) return Loc.T("Mac.MountRootSystem");
         if (activeMountPoints.Any(m => path == m || path.StartsWith(m + "/", StringComparison.Ordinal)))
             return Loc.T("Mac.MountRootInsideDrive");
         try
@@ -112,12 +161,14 @@ public sealed class MacPlatform : IPlatform
     public void AfterUnmount(DriveProfile p) => RemoveEmptyFolder(MountPoint(p));
 
     /// <summary>
-    /// Force-unmounts NFS mounts under the mount folder. They are left behind when the
-    /// engine exits unexpectedly; macOS does not remove them by itself.
+    /// Force-unmounts NFS mounts under the mount folder and at the drives' own
+    /// mount folders. They are left behind when the engine exits unexpectedly;
+    /// macOS does not remove them by itself.
     /// </summary>
     public void CleanupStaleMounts(IEnumerable<DriveProfile> profiles)
     {
-        foreach (var path in MountedNfsPaths().Where(m => m.StartsWith(AppPaths.MountRoot + "/", StringComparison.Ordinal)))
+        var own = new HashSet<string>(profiles.Select(MountPoint), StringComparer.Ordinal);
+        foreach (var path in MountedNfsPaths().Where(m => own.Contains(m) || m.StartsWith(AppPaths.MountRoot + "/", StringComparison.Ordinal)))
         {
             Log.Warn($"Removing stale mount {path}");
             Run("/usr/sbin/diskutil", "umount", "force", path);

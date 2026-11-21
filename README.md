@@ -31,7 +31,7 @@
 
 **Windows**：到 [Releases](https://github.com/JoshuaHKU/NasDrive-For-Win11/releases) 下载最新的 `NasDrive-x.y.z-x64-setup.exe`，双击安装。安装程序会在需要时自动安装 [WinFsp](https://winfsp.dev)（文件系统驱动）。
 
-**macOS**（0.5 起）：下载 `NasDrive-x.y.z-osx-arm64.dmg`（Apple 芯片）或 `osx-x64.dmg`（Intel），把 NasDrive 拖入"应用程序"。**无需安装 macFUSE，也不需要管理员权限**：引擎通过系统自带的 NFS 客户端挂载，驱动器默认出现在 `~/NasDrive/<名称>`（可在设置中更改挂载位置）和 Finder 边栏的"位置"中。NasDrive 是菜单栏应用（不显示在程序坞）。目前安装包只做了临时签名，首次打开请在 Finder 中右键 NasDrive →"打开"。
+**macOS**（0.5 起）：下载 `NasDrive-x.y.z-osx-arm64.dmg`（Apple 芯片）或 `osx-x64.dmg`（Intel），把 NasDrive 拖入"应用程序"。**无需安装 macFUSE，也不需要管理员权限**：引擎通过系统自带的 NFS 客户端挂载，驱动器默认出现在 `~/NasDrive/<名称>`（每个驱动器可单独指定挂载位置，统一的默认位置也可在设置中更改）和 Finder 边栏的"位置"中。NasDrive 是菜单栏应用（不显示在程序坞）。目前安装包只做了临时签名，首次打开请在 Finder 中右键 NasDrive →"打开"。
 
 详细步骤、各协议的 NAS 端设置与常见问题见 **[安装与使用说明](docs/安装与使用说明.md)**。
 

@@ -11,6 +11,8 @@ public sealed class DriveProfile
     public string Name { get; set; } = "WebDAV";
     /// <summary>Drive letter without colon, e.g. "Z".</summary>
     public string DriveLetter { get; set; } = "Z";
+    /// <summary>macOS: folder the drive is mounted on. Empty = default (&lt;mount folder&gt;/&lt;name&gt;).</summary>
+    public string MountPath { get; set; } = "";
     /// <summary>"webdav", "nfs", "synology", "sftp" or "ftp".</summary>
     public string ServiceType { get; set; } = "webdav";
     /// <summary>NFS export path on the server, e.g. "/volume1/share".</summary>

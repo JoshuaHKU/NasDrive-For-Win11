@@ -151,6 +151,7 @@ public static class Program
             await TestDrive(vm, win, p, serverDir);
 
         await TestMountRoot(vm, dav);
+        await TestMountPath(vm, dav, sftp);
 
         Console.WriteLine("== SFTP host key");
         Check("SFTP host key prompt shown and pinned", seenHostKey != null && AppServices.Profiles.All.First(x => x.Id == sftp.Id).SshHostKeyFingerprint == seenHostKey,
@@ -282,6 +283,48 @@ public static class Program
         var none = UpdateService.Pick(new System.Text.Json.Nodes.JsonArray(Rel("v0.4.0", false, "NasDrive-0.4.0-x64-setup.exe")), new Version(0, 5, 0, 0), "-osx-arm64.dmg");
         Check("update: no mac release yet means up to date", !none.Available, $"{none}");
         Check("update: app version is the app's, not the library's", AppInfo.Version == typeof(Program).Assembly.GetName().Version, AppInfo.VersionText);
+    }
+
+    /// <summary>Per-drive mount folder set in the editor.</summary>
+    static async Task TestMountPath(MainViewModel vm, DriveProfile dav, DriveProfile other)
+    {
+        Console.WriteLine("== per-drive mount folder");
+        var home = Env("NASDRIVE_HOME");
+        var full = Path.Combine(home, "我的 NAS", "资料");
+        var busy = Path.Combine(home, "非空目录");
+        Directory.CreateDirectory(busy);
+        File.WriteAllText(Path.Combine(busy, "keep.txt"), "x");
+        var others = new[] { other.Mountpoint };
+        Check("mount path: relative rejected", MacPlatform.CheckMountPath("资料", others, null, out _) != null);
+        Check("mount path: non-empty folder rejected", MacPlatform.CheckMountPath(busy, others, null, out _) != null);
+        Check("mount path: another drive's folder rejected", MacPlatform.CheckMountPath(other.Mountpoint, others, null, out _) != null);
+        Check("mount path: folder inside another drive rejected", MacPlatform.CheckMountPath(other.Mountpoint + "/x", others, null, out _) != null);
+        Check("mount path: new folder accepted", MacPlatform.CheckMountPath(full, others, null, out var f) == null && f == full, f);
+
+        var item = vm.Find(dav.Id)!;
+        vm.Edit(item);
+        Check("editor shows default mount folder as hint", vm.Editor!.MountPath == "" && vm.Editor.DefaultMountPath == dav.Mountpoint, vm.Editor.DefaultMountPath);
+        vm.Editor.MountPath = full;
+        vm.Editor.SaveCommand.Execute(null);
+        await Until(() => AppServices.Profiles.All.First(x => x.Id == dav.Id).MountPath == full, 30, "profile saved with mount path");
+        var saved = AppServices.Profiles.All.First(x => x.Id == dav.Id);
+        Check("mount path: saved, list row shows it", saved.Mountpoint == full && vm.Find(dav.Id)!.MountText.Contains("我的 NAS"), vm.Find(dav.Id)!.MountText);
+        item = vm.Find(dav.Id)!;
+        await vm.ConnectAsync(item);
+        await Until(() => item.State == DriveState.Connected, 60, "connect at own folder");
+        Check($"mount path: mounted at {full}", IsMounted(full));
+        var listing = await Task.Run(() => Directory.EnumerateFileSystemEntries(full).Count());
+        Check("mount path: readable", listing >= 0);
+        await vm.DisconnectAsync(item);
+        await Until(() => item.State == DriveState.Disconnected, 60, "disconnect");
+        Check("mount path: unmounted, empty folder removed", !IsMounted(full) && !Directory.Exists(full));
+
+        vm.Edit(item);
+        vm.Editor!.DefaultMountPathCommand.Execute(null);
+        vm.Editor.SaveCommand.Execute(null);
+        await Until(() => AppServices.Profiles.All.First(x => x.Id == dav.Id).MountPath == "", 30, "profile back to default");
+        Check("mount path: back to default", AppServices.Profiles.All.First(x => x.Id == dav.Id).Mountpoint.StartsWith(AppPaths.MountRoot + "/"));
+        vm.CurrentPage = Page.List;
     }
 
     static string SafePath(Process p) { try { return p.MainModule?.FileName ?? ""; } catch { return ""; } }

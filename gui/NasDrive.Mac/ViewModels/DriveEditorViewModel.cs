@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using NasDrive.Mac.Platform;
 using NasDrive.Mac.Views;
 using NasDrive.Platform;
 using NasDrive.Models;
@@ -51,6 +53,8 @@ public sealed class DriveEditorViewModel : ObservableObject
         RefreshSharesCommand = new AsyncCommand(RefreshSharesAsync, () => !_listingShares && !_busy && !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(Username));
         SelectShareCommand = new RelayCommand(o => { if (o is string sh) BasePath = "/" + sh; });
         BrowseKeyCommand = new AsyncCommand(BrowseKeyFileAsync);
+        BrowseMountPathCommand = new AsyncCommand(BrowseMountPathAsync);
+        DefaultMountPathCommand = new RelayCommand(() => MountPath = "");
         ForgetHostKeyCommand = new RelayCommand(() => { _p.SshHostKey = ""; _p.SshHostKeyFingerprint = ""; OnPropertyChanged(nameof(HostKeyText)); });
         if (_p.IsNfs && !string.IsNullOrWhiteSpace(_p.Host)) _ = RefreshExportsAsync(false);
         // Avalonia has no CommandManager: re-evaluate Save/Test when a field changes.
@@ -74,6 +78,8 @@ public sealed class DriveEditorViewModel : ObservableObject
     public ICommand SelectShareCommand { get; }
     public ICommand BrowseKeyCommand { get; }
     public ICommand ForgetHostKeyCommand { get; }
+    public ICommand BrowseMountPathCommand { get; }
+    public ICommand DefaultMountPathCommand { get; }
 
     // --- protocol --------------------------------------------------------
 
@@ -352,12 +358,35 @@ public sealed class DriveEditorViewModel : ObservableObject
         ? (_hasStoredPassword ? Loc.T("Editor.SshPassphraseKeep") : Loc.T("Editor.SshPassphrase"))
         : _hasStoredPassword ? Loc.T("Editor.PassKeep") : Loc.T("Editor.Pass");
 
-    /// <summary>macOS: the drive is mounted at &lt;mount folder&gt;/name (default ~/NasDrive).</summary>
-    public string MountHint => Loc.T("Mac.MountAt", _p.Mountpoint);
+    /// <summary>The drive's own mount folder; empty = default (&lt;mount folder&gt;/name).</summary>
+    public string MountPath
+    {
+        get => _p.MountPath;
+        set { _p.MountPath = (value ?? "").Trim(); OnPropertyChanged(); }
+    }
+
+    public string DefaultMountPath => MacPlatform.DefaultMountPoint(_p);
+    public string MountHint => Loc.T("Mac.MountPathHint", DefaultMountPath);
+
+    private async Task BrowseMountPathAsync()
+    {
+        var current = string.IsNullOrWhiteSpace(_p.MountPath) ? DefaultMountPath : MacPlatform.Normalize(_p.MountPath);
+        var start = Directory.Exists(current) ? current
+            : Directory.Exists(Path.GetDirectoryName(current)) ? Path.GetDirectoryName(current)!
+            : System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+        var dir = await Dialogs.PickFolderAsync(Loc.T("Mac.MountPathLabel"), start);
+        if (dir == null) return;
+        dir = MacPlatform.Normalize(dir);
+        // A folder with content cannot be mounted on: use a subfolder named after the drive.
+        var mounted = AppServices.Drives.Get(_p.Id).State != DriveState.Disconnected ? _p.Mountpoint : null;
+        if (dir != mounted && Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any())
+            dir = Path.Combine(dir, string.IsNullOrWhiteSpace(_p.Name) ? "NAS" : _p.Name.Replace('/', '_').Replace(':', '_').Trim());
+        MountPath = dir;
+    }
     public List<string> CacheModes { get; } = new() { "full", "writes", "minimal", "off" };
     public List<int> Timeouts { get; } = new() { 15, 30, 60, 100, 180, 300 };
 
-    public string Name { get => _p.Name; set { _p.Name = value; OnPropertyChanged(); OnPropertyChanged(nameof(MountHint)); } }
+    public string Name { get => _p.Name; set { _p.Name = value; OnPropertyChanged(); OnPropertyChanged(nameof(MountHint)); OnPropertyChanged(nameof(DefaultMountPath)); } }
     public bool AutoConnect { get => _p.AutoConnect; set { _p.AutoConnect = value; OnPropertyChanged(); } }
     public bool UseProxy { get => _p.UseProxy; set { _p.UseProxy = value; OnPropertyChanged(); } }
     public bool ReadOnly { get => _p.ReadOnly; set { _p.ReadOnly = value; OnPropertyChanged(); } }
@@ -551,6 +580,23 @@ public sealed class DriveEditorViewModel : ObservableObject
             return;
         }
         if (string.IsNullOrWhiteSpace(_p.Name)) _p.Name = _p.Host;
+
+        // Own mount folder: check it before anything is saved.
+        if (!string.IsNullOrWhiteSpace(_p.MountPath))
+        {
+            var others = AppServices.Profiles.All.Where(o => o.Id != _p.Id).Select(o => o.Mountpoint);
+            var mountedAt = AppServices.Drives.Get(_p.Id).State != DriveState.Disconnected
+                ? AppServices.Profiles.All.FirstOrDefault(o => o.Id == _p.Id)?.Mountpoint : null;
+            var error = MacPlatform.CheckMountPath(_p.MountPath, others, mountedAt, out var full);
+            if (error != null)
+            {
+                await Dialogs.ErrorAsync(Loc.T("Mac.MountPathInvalid", error));
+                return;
+            }
+            // The default location is stored as "" so it follows the Settings folder.
+            _p.MountPath = full == MacPlatform.DefaultMountPoint(_p) ? "" : full;
+            OnPropertyChanged(nameof(MountPath));
+        }
         _p.BasePath = ConnectionString.NormalizePath(_p.BasePath);
         if (_p.BasePath.Length == 0) _p.BasePath = "/";
 

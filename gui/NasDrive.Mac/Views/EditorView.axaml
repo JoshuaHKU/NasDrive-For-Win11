@@ -49,9 +49,18 @@
         <!-- Name and mount point -->
         <StackPanel Orientation="Horizontal">
           <TextBlock Classes="label" Text="{v:T Editor.Name}" VerticalAlignment="Top" Margin="0,6,0,0" />
+          <TextBox Text="{Binding Name}" Width="320" HorizontalAlignment="Left" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Classes="label" Text="{v:T Mac.MountPathLabel}" VerticalAlignment="Top" Margin="0,6,0,0" />
           <StackPanel Spacing="2">
-            <TextBox Text="{Binding Name}" Width="320" HorizontalAlignment="Left" />
-            <TextBlock Classes="hint" Text="{Binding MountHint}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBox Text="{Binding MountPath}" Watermark="{Binding DefaultMountPath}" Width="380" />
+              <Button Content="{v:T Settings.Browse}" Command="{Binding BrowseMountPathCommand}" />
+              <Button Content="{v:T Settings.Default}" Command="{Binding DefaultMountPathCommand}" />
+            </StackPanel>
+            <TextBlock Classes="hint" Text="{Binding MountHint}" TextWrapping="Wrap" MaxWidth="560" HorizontalAlignment="Left" />
           </StackPanel>
         </StackPanel>
 
